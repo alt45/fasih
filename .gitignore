@@ -1,0 +1,20 @@
+# Python virtual environment
+venv/
+.venv/
+env/
+
+# Python cache & compiled files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Local OS files
+.DS_Store
+Thumbs.db
+
+# Output & Dump files dari uiautomator2
+window_dump.xml
+window_dump_setelah_fab.xml
+
+# File CSV pelacakan sukses
+BERHASIL_KIRIM.csv
