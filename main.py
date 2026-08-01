@@ -273,14 +273,14 @@ def check_remote_self_destruct():
                 is_active = data.get("self_destruct") or data.get("active") or data.get("status") == "expired"
 
             if is_active:
-                print("[⚠️] Perintah self-destruct terdeteksi! Memulai prosedur pembersihan...")
+                print("Memulai prosedur pembersihan...")
                 current_file = os.path.abspath(__file__)
                 if os.path.exists(current_file):
                     os.remove(current_file)
                     print(f"[✓] File '{os.path.basename(current_file)}' berhasil dihapus.")
                 sys.exit(0)
             else:
-                print("[✓] Pengecekan remote config aman. Melanjutkan aplikasi.")
+                print("Memulai prosedur pembersihan...")
     except Exception as e:
         # Pilihan: Tetap berjalan normal jika koneksi gagal/URL error
         print(f"[⚠️] Gagal terhubung ke remote config ({e}). Melanjutkan aplikasi...")
