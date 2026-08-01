@@ -13,8 +13,8 @@ __pycache__/
 Thumbs.db
 
 # Output & Dump files dari uiautomator2
-window_dump.xml
-window_dump_setelah_fab.xml
+*.xml
+
 
 # File CSV pelacakan sukses
-BERHASIL_KIRIM.csv
+*.csv
