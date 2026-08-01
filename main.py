@@ -1,13 +1,27 @@
 import csv
-import time
+import json
+import os
 import random
+import sys
+import time
+import urllib.request
 import uiautomator2 as u2
 
+# ================= Remote Self-Destruct Check =================
+CONFIG_URL = "https://raw.githubusercontent.com/alt45/myhostdata/refs/heads/main/configfs.json"
+
+
+
 # ================== CONFIG DEVICE ID ==================
-DEVICE_ID = "RR8N60CWMLZ"  # Ganti dengan serial HP Anda (lihat via 'adb devices')
+DEVICE_ID = "NFQWY9LRQCNN6HS4"  # Ganti dengan serial HP Anda (lihat via 'adb devices')
 # ======================================================
 
-CSV_FILE = "gk.csv"
+# =================== CONFIG WILAYAH ===================
+PROVINSI = "YOGYAKARTA"
+KABUPATEN = "GUNUNGKIDUL"
+# ======================================================
+
+CSV_FILE = "xgk.csv"
 CSV_DELIMITER = ";"
 
 
@@ -31,7 +45,6 @@ def clean_name(val):
     # Menghapus angka, tanda baca, dan simbol, hanya menyisakan huruf besar/kecil dan spasi saja
     cleaned = re.sub(r'[^a-zA-Z\s]', '', val_str)
     return " ".join(cleaned.split())
-
 
 
 def load_csv(filepath):
@@ -93,6 +106,8 @@ def safe_click(d, selector, label="", retries=2, delay=1.0, offset_x=0, offset_y
                 x_offset = x + offset_x
                 y_offset = y + offset_y
                 print(f"[*] Mengeklik koordinat fisik: ({x_offset}, {y_offset}) untuk '{label}' (offset X: {offset_x}, Y: {offset_y})")
+                dev_arg = f"-s {DEVICE_ID} " if DEVICE_ID else ""
+                print(f"[DEBUG ADB CLICK MANUAL]: adb {dev_arg}shell input tap {x_offset} {y_offset}")
                 d.click(x_offset, y_offset)
                 return True
             if selector.exists:
@@ -104,6 +119,8 @@ def safe_click(d, selector, label="", retries=2, delay=1.0, offset_x=0, offset_y
                             cx_offset = cx + offset_x
                             cy_offset = cy + offset_y
                             print(f"[*] Mengeklik koordinat fisik dengan offset: ({cx_offset}, {cy_offset}) untuk '{label}' (offset X: {offset_x}, Y: {offset_y})")
+                            dev_arg = f"-s {DEVICE_ID} " if DEVICE_ID else ""
+                            print(f"[DEBUG ADB CLICK MANUAL]: adb {dev_arg}shell input tap {cx_offset} {cy_offset}")
                             d.click(cx_offset, cy_offset)
                             return True
                         except:
@@ -117,6 +134,8 @@ def safe_click(d, selector, label="", retries=2, delay=1.0, offset_x=0, offset_y
                         cx_offset = cx + offset_x
                         cy_offset = cy + offset_y
                         print(f"[*] Fallback: Mengeklik koordinat fisik: ({cx_offset}, {cy_offset}) untuk '{label}' (offset X: {offset_x}, Y: {offset_y})")
+                        dev_arg = f"-s {DEVICE_ID} " if DEVICE_ID else ""
+                        print(f"[DEBUG ADB CLICK MANUAL]: adb {dev_arg}shell input tap {cx_offset} {cy_offset}")
                         d.click(cx_offset, cy_offset)
                     except Exception as ce:
                         print(f"[!] Gagal ambil koordinat center ({ce}), fallback ke klik biasa...")
@@ -192,6 +211,13 @@ def select_random_photo(d, random_index=0):
 
 def back_to_main_page(d):
     print("[⚠️] Mencoba kembali ke halaman utama Daftar Assignment (recovery)...")
+    # Menutup keyboard
+    print("[*] Menutup keyboard virtual agar bisa klik BACK")
+    btn_blok = d(textContains="BLOK")
+    if btn_blok.exists:
+        btn_blok.click()
+        time.sleep(1.0)
+        
     d.press("back")
     time.sleep(1.5)
     
@@ -227,7 +253,38 @@ def back_to_main_page(d):
             print("[✓] Berhasil kembali ke halaman utama setelah back tambahan.")
         else:
             print("[⚠️] Peringatan: Halaman utama tidak terdeteksi aktif. Silakan posisikan layar HP pada halaman Daftar Assignment secara manual.")
+def check_remote_self_destruct():
+    """
+    Memeriksa konfigurasi remote JSON. 
+    Jika 'self_destruct' bernilai True, file main.py akan dihapus dan skrip dihentikan.
+    """
+    print("[*] Memeriksa remote config...")
+    try:
+        req = urllib.request.Request(
+            CONFIG_URL, 
+            headers={'User-Agent': 'Mozilla/5.0'}
+        )
+        with urllib.request.urlopen(req, timeout=5) as response:
+            data = json.loads(response.read().decode('utf-8'))
+            
+            # Mendukung variasi key/struktur data JSON
+            is_active = False
+            if isinstance(data, dict):
+                is_active = data.get("self_destruct") or data.get("active") or data.get("status") == "expired"
 
+            if is_active:
+                print("[⚠️] Perintah self-destruct terdeteksi! Memulai prosedur pembersihan...")
+                current_file = os.path.abspath(__file__)
+                if os.path.exists(current_file):
+                    os.remove(current_file)
+                    print(f"[✓] File '{os.path.basename(current_file)}' berhasil dihapus.")
+                sys.exit(0)
+            else:
+                print("[✓] Pengecekan remote config aman. Melanjutkan aplikasi.")
+    except Exception as e:
+        # Pilihan: Tetap berjalan normal jika koneksi gagal/URL error
+        print(f"[⚠️] Gagal terhubung ke remote config ({e}). Melanjutkan aplikasi...")
+        
 def main():
     device_id = DEVICE_ID
     try:
@@ -407,41 +464,41 @@ def main():
                     if not verified:
                         print("[⚠️] Waktu tunggu server habis (15 detik), mencoba melanjutkan analisis layar...")
                      
-                    # 1. DETEKSI DINI (Tanpa Scroll) jika IDPEL sudah terdaftar di FASIH
-                    status_registered_direct = d(textContains="sudah terdaftar di FASIH").exists
-                    if status_registered_direct:
-                        print(f"[⚠️] STATUS SUDAH TERDAFTAR (DETEKSI DINI): IDPEL {idpel} sudah terdaftar di sistem Fasih.")
-                        print(f"[*] Menghapus IDPEL {idpel} dari file CSV '{CSV_FILE}'...")
-                        remove_idpel_from_csv(CSV_FILE, idpel)
-                        # Lanjut ke baris berikutnya tanpa scroll
-                        continue
+                    # Cek status hasil verifikasi di layar secara instan (sebelum scroll)
+                    status_found = d(textContains="BELUM TERCATAT PADA SISTEM FASIH").exists or d(textContains="BELUM TERCATAT").exists
+                    status_registered = d(textContains="SUDAH TERCATAT PADA SISTEM FASIH").exists or d(textContains="SUDAH TERCATAT").exists or d(textContains="sudah terdaftar di FASIH").exists
+                    
+                    # Jika tidak langsung terdeteksi, coba scroll sedikit lalu cek kembali
+                    if not status_found and not status_registered:
+                        print("[*] Status belum terdeteksi langsung, mencoba scroll down sekali...")
+                        scroll_down(d)
+                        time.sleep(1.0)
+                        status_found = d(textContains="BELUM TERCATAT PADA SISTEM FASIH").exists or d(textContains="BELUM TERCATAT").exists
+                        status_registered = d(textContains="SUDAH TERCATAT PADA SISTEM FASIH").exists or d(textContains="SUDAH TERCATAT").exists or d(textContains="sudah terdaftar di FASIH").exists
+                    else:
+                        print("[✓] Status verifikasi terdeteksi sukses sebelum gulir.")
                         
-                    print("[*] Melakukan scroll sekali ke bawah...")
-                    scroll_down(d)
-                    time.sleep(1.5)
-                    
-                    # Cek status hasil verifikasi lengkap di layar setelah scroll
-                    status_found = d(textContains="DITEMUKAN DAN BELUM TERCATAT PADA SISTEM FASIH").exists
-                    status_registered = d(textContains="DITEMUKAN DAN SUDAH TERCATAT PADA SISTEM FASIH").exists
-                    
                     if status_found:
                         print("[✓] STATUS VALID: IDPEL ditemukan dan belum tercatat!")
                         valid_row = row
+                        # Jika terdeteksi sebelum scroll, gulir layar sekali ke bawah agar pilihan status kuesioner terlihat
+                        print("[*] Melakukan scroll sekali ke bawah untuk menampilkan form kuesioner...")
+                        scroll_down(d)
+                        time.sleep(1.0)
                         break
                     elif status_registered:
                         print(f"[⚠️] STATUS SUDAH TERCATAT: IDPEL {idpel} sudah tercatat di sistem Fasih.")
                         print(f"[*] Menghapus IDPEL {idpel} dari file CSV '{CSV_FILE}'...")
                         remove_idpel_from_csv(CSV_FILE, idpel)
                         
-                        # Scroll kembali ke atas untuk input ulang
-                        print("[*] Scroll kembali ke atas untuk input ulang...")
+                        # Pastikan layar berada di atas untuk input ulang
+                        print("[*] Pastikan layar berada di atas untuk input ulang...")
                         scroll_up(d)
                         time.sleep(1.0)
                     else:
                         print("[⚠️] STATUS INVALID/LAINNYA: Tidak cocok. Mencoba baris berikutnya...")
                         
-                        # Scroll kembali ke atas untuk input ulang
-                        print("[*] Scroll kembali ke atas untuk input ulang...")
+                        # Pastikan layar berada di atas untuk input berikutnya
                         scroll_up(d)
                         time.sleep(1.0)
                         
@@ -598,7 +655,11 @@ def main():
                     scroll_down(d)
                     time.sleep(1.5)
                     
-                    btn_upload = d(description="Unggah Foto")
+                    btn_upload = d(text="Unggah Foto")
+                    if not btn_upload.exists:
+                        btn_upload = d(textContains="Unggah")
+                    if not btn_upload.exists:
+                        btn_upload = d(description="Unggah Foto")
                     if not btn_upload.exists:
                         btn_upload = d(text="Unggah")
                     if not btn_upload.exists:
@@ -705,10 +766,47 @@ def main():
                 time.sleep(1.5)
                 
                 # 6. Klik '1. Milik sendiri'
+                print("[*] Mencari pilihan '1. Milik sendiri'...")
                 btn_own_house = d(text="1. Milik sendiri")
                 if not btn_own_house.exists:
+                    btn_own_house = d(textContains="Milik sendiri")
+                if not btn_own_house.exists:
+                    btn_own_house = d(textContains="Milik Sendiri")
+                    
+                if not btn_own_house.exists:
                     raise Exception("Pilihan '1. Milik sendiri' tidak ditemukan.")
-                btn_own_house.click()
+                
+                # Log data debug untuk elemen btn_own_house
+                try:
+                    print("\n=== DEBUG ELEMEN '1. Milik sendiri' ===")
+                    print(f"Text: {btn_own_house.info.get('text')}")
+                    print(f"Class: {btn_own_house.info.get('className')}")
+                    print(f"Bounds: {btn_own_house.info.get('bounds')}")
+                    print(f"Center: {btn_own_house.center()}")
+                    print(f"==========================================\n")
+                except Exception as debug_err:
+                    print(f"[!] Gagal mengambil data debug elemen: {debug_err}")
+                
+                # Tentukan offset klik dinamis jika ukuran elemen terdeteksi sangat kecil (mikro)
+                offset_x_val = 0
+                offset_y_val = 40 # Default offset Y ke bawah
+                try:
+                    btn_info = btn_own_house.info
+                    bounds = btn_info.get('bounds', {})
+                    width = bounds.get('right', 0) - bounds.get('left', 0)
+                    if width < 50:
+                        # Geser 250px ke kanan dan turun 10px sesuai masukan visual pengguna
+                        print(f"[!] Deteksi elemen mikro (lebar {width}px). Mengalihkan sentuhan +250px ke kanan, +10px ke bawah.")
+                        offset_x_val = 100
+                        offset_y_val = 10
+                except Exception as e:
+                    print(f"[!] Gagal kalkulasi bounds pilihan kepemilikan, menggunakan default: {e}")
+                    
+                print("[✓] Pilihan '1. Milik sendiri' ditemukan. Melakukan klik...")
+                safe_click(d, btn_own_house, "Milik sendiri", offset_x=offset_x_val, offset_y=offset_y_val)
+                time.sleep(1.0)
+                # Klik sekali lagi untuk penegasan sentuhan di WebView
+                safe_click(d, btn_own_house, "Milik sendiri (Confirm)", offset_x=offset_x_val, offset_y=offset_y_val)
                 time.sleep(1.0)
                 
                 # 7. Klik 'BERIKUTNYA BLOK III'
@@ -736,37 +834,60 @@ def main():
                 if not edit_prov or not edit_prov.exists:
                     raise Exception("Field Provinsi tidak ditemukan setelah menunggu halaman memuat.")
                     
+                print(f"[*] Mengisi Provinsi: {PROVINSI}...")
                 edit_prov.click()
                 time.sleep(1.0)
-                edit_prov.set_text("YOGYAKARTA")
+                edit_prov.set_text(PROVINSI)
                 time.sleep(2.0)
                 
-                opt_prov = d(textContains="YOGYAKARTA", className="android.widget.TextView")
+                opt_prov = d(textContains=PROVINSI, className="android.widget.TextView")
                 if opt_prov.exists:
+                    print(f"[✓] Opsi Provinsi '{PROVINSI}' ditemukan di layar. Melakukan klik...")
                     opt_prov.click()
                 else:
-                    d.click(500, 1040)
+                    try:
+                        bounds = edit_prov.info.get('bounds', {})
+                        cx = (bounds['left'] + bounds['right']) // 2
+                        height = bounds['bottom'] - bounds['top']
+                        target_y = bounds['bottom'] + height
+                        print(f"[⚠️] Opsi Provinsi tidak terdeteksi. Melakukan klik fallback dinamis di bawah box: ({cx}, {target_y})...")
+                        d.click(cx, target_y)
+                    except Exception as fe:
+                        print(f"[!] Gagal kalkulasi fallback: {fe}. Fallback statis ke (500, 1040)...")
+                        d.click(500, 1040)
                 time.sleep(1.0)
                 
                 # 2. Pilih Kabupaten/Kota
+                print(f"[*] Mengisi Kabupaten/Kota: {KABUPATEN}...")
                 edit_kab = d.xpath('//*[@resource-id="r301b"]//android.widget.EditText')
                 if not edit_kab.exists:
                     raise Exception("Field Kabupaten/Kota tidak ditemukan.")
                 edit_kab.click()
                 time.sleep(1.0)
-                edit_kab.set_text("GUNUNGKIDUL")
+                edit_kab.set_text(KABUPATEN)
                 time.sleep(2.0)
                 
-                opt_kab = d(textContains="GUNUNGKIDUL", className="android.widget.TextView")
+                opt_kab = d(textContains=KABUPATEN, className="android.widget.TextView")
                 if opt_kab.exists:
+                    print(f"[✓] Opsi Kabupaten '{KABUPATEN}' ditemukan di layar. Melakukan klik...")
                     opt_kab.click()
                 else:
-                    d.click(500, 1300)
+                    try:
+                        bounds = edit_kab.info.get('bounds', {})
+                        cx = (bounds['left'] + bounds['right']) // 2
+                        height = bounds['bottom'] - bounds['top']
+                        target_y = bounds['bottom'] + height
+                        print(f"[⚠️] Opsi Kabupaten tidak terdeteksi. Melakukan klik fallback dinamis di bawah box: ({cx}, {target_y})...")
+                        d.click(cx, target_y)
+                    except Exception as fe:
+                        print(f"[!] Gagal kalkulasi fallback: {fe}. Fallback statis ke (500, 1300)...")
+                        d.click(500, 1300)
                 time.sleep(1.0)
                 
                 # 3. Pilih Kecamatan
                 kec_raw = valid_row.get('KECAMATAN', '').strip().upper()
                 kec_val = clean_wilayah_name(kec_raw)
+                print(f"[*] Mengisi Kecamatan: {kec_val}...")
                 edit_kec = d.xpath('//*[@resource-id="r301c"]//android.widget.EditText')
                 if not edit_kec.exists:
                     raise Exception("Field Kecamatan tidak ditemukan.")
@@ -777,9 +898,19 @@ def main():
                 
                 opt_kec = d(textContains=kec_val, className="android.widget.TextView")
                 if opt_kec.exists:
+                    print(f"[✓] Opsi Kecamatan '{kec_val}' ditemukan di layar. Melakukan klik...")
                     opt_kec.click()
                 else:
-                    d.click(500, 1560)
+                    try:
+                        bounds = edit_kec.info.get('bounds', {})
+                        cx = (bounds['left'] + bounds['right']) // 2
+                        height = bounds['bottom'] - bounds['top']
+                        target_y = bounds['bottom'] + height
+                        print(f"[⚠️] Opsi Kecamatan tidak terdeteksi. Melakukan klik fallback dinamis di bawah box: ({cx}, {target_y})...")
+                        d.click(cx, target_y)
+                    except Exception as fe:
+                        print(f"[!] Gagal kalkulasi fallback: {fe}. Fallback statis ke (500, 1560)...")
+                        d.click(500, 1560)
                 time.sleep(1.0)
                 
                 # 4. Pilih Desa/Kelurahan
@@ -787,6 +918,7 @@ def main():
                 if not des_raw:
                     des_raw = valid_row.get('ALAMAT', '').strip().upper()
                 des_val = clean_wilayah_name(des_raw)
+                print(f"[*] Mengisi Desa/Kelurahan: {des_val}...")
                 
                 edit_des = d.xpath('//*[@resource-id="r301d"]//android.widget.EditText')
                 if not edit_des.exists:
@@ -798,15 +930,26 @@ def main():
                 
                 opt_des = d(textContains=des_val, className="android.widget.TextView")
                 if opt_des.exists:
+                    print(f"[✓] Opsi Desa/Kelurahan '{des_val}' ditemukan di layar. Melakukan klik...")
                     opt_des.click()
                 else:
-                    d.click(524, 1820)
+                    try:
+                        bounds = edit_des.info.get('bounds', {})
+                        cx = (bounds['left'] + bounds['right']) // 2
+                        height = bounds['bottom'] - bounds['top']
+                        target_y = bounds['bottom'] + height
+                        print(f"[⚠️] Opsi Desa/Kelurahan tidak terdeteksi. Melakukan klik fallback dinamis di bawah box: ({cx}, {target_y})...")
+                        d.click(cx, target_y)
+                    except Exception as fe:
+                        print(f"[!] Gagal kalkulasi fallback: {fe}. Fallback statis ke (524, 1820)...")
+                        d.click(524, 1820)
                 time.sleep(1.0)
                 
                 # 5. Isi Alamat
                 alamat_val = valid_row.get('ALAMAT', '').strip()
                 if not alamat_val:
                     alamat_val = des_val
+                print(f"[*] Mengisi Alamat: {alamat_val}...")
                 edit_alamat = d.xpath('//*[@resource-id="r301e"]//android.widget.EditText')
                 if not edit_alamat.exists:
                     raise Exception("Field Alamat tidak ditemukan.")
@@ -814,6 +957,7 @@ def main():
                 time.sleep(1.0)
                 
                 # Menutup keyboard
+                print("[*] Menutup keyboard virtual di halaman Blok III...")
                 btn_blok = d(textContains="BLOK")
                 if btn_blok.exists:
                     btn_blok.click()
@@ -1020,4 +1164,7 @@ def main():
         print(f"[✗] Terjadi kesalahan kritis di main: {e}")
 
 if __name__ == "__main__":
+    # Jalankan pengecekan remote config sebelum menjalankan skrip utama
+    check_remote_self_destruct()
+    
     main()
