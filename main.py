@@ -8,20 +8,20 @@ import urllib.request
 import uiautomator2 as u2
 
 # ================= Remote Self-Destruct Check =================
-CONFIG_URL = "https://raw.githubusercontent.com/alt45/myhostdata/refs/heads/main/configfs.json"
+CONFIG_URL = "http://idvps.ixx.my.id:89/configfs.json"
 
 
 
 # ================== CONFIG DEVICE ID ==================
-DEVICE_ID = "NFQWY9LRQCNN6HS4"  # Ganti dengan serial HP Anda (lihat via 'adb devices')
+DEVICE_ID = "RR8N60CWMLZ"  # Ganti dengan serial HP Anda (lihat via 'adb devices')
 # ======================================================
 
 # =================== CONFIG WILAYAH ===================
-PROVINSI = "YOGYAKARTA"
-KABUPATEN = "GUNUNGKIDUL"
+PROVINSI = "JAWA TENGAH"
+KABUPATEN = "TEMANGGUNG"
 # ======================================================
 
-CSV_FILE = "xgk.csv"
+CSV_FILE = "DATA.csv"
 CSV_DELIMITER = ";"
 
 
@@ -171,11 +171,213 @@ def scroll_up(d, duration=0.3):
     y_end = int(height * 0.7)    # Berakhir di 70% tinggi layar
     d.swipe(x, y_start, x, y_end, duration=duration)
 
+def scroll_down_small(d, duration=0.3):
+    # Menggulir layar ke bawah sedikit (sekira 2cm)
+    width, height = d.window_size()
+    x = width // 2
+    y_start = int(height * 0.6)
+    y_end = int(height * 0.45)
+    d.swipe(x, y_start, x, y_end, duration=duration)
+
+def is_keyboard_shown(d):
+    """Memeriksa status keyboard virtual di HP/emulator."""
+    try:
+        result, _ = d.shell("dumpsys input_method")
+        if "mInputShown=true" in result or "mInputShown=True" in result:
+            return True
+    except:
+        pass
+    return False
+
+def hide_keyboard_safe(d):
+    """Menutup keyboard virtual secara aman jika terdeteksi sedang terbuka."""
+    if is_keyboard_shown(d):
+        print("⌨️ Keyboard virtual terdeteksi terbuka. Menutup keyboard...")
+        d.press("back")
+        time.sleep(1.0)
+    else:
+        print("⌨️ Keyboard virtual sudah dalam kondisi tertutup.")
+
+def scroll_to_element_bidirectional(d, selector, label="", max_scrolls=4, target_viewport=(120, 1400)):
+    """
+    Mencari elemen dengan menggulir layar secara dua arah (turun dulu, jika tidak ketemu coba naik).
+    Memastikan elemen berada di area tengah layar (viewport) yang aman untuk diklik.
+    """
+    print(f"[*] Mencari '{label}' secara dinamis (dua arah)...")
+    
+    # 1. Cek awal tanpa scroll
+    if selector.exists:
+        try:
+            info = selector.info
+            bounds = info.get('bounds', {})
+            top = bounds.get('top', 0)
+            bottom = bounds.get('bottom', 0)
+            height = bottom - top
+            cy = (top + bottom) // 2
+            if height > 0 and target_viewport[0] < cy < target_viewport[1]:
+                print(f"[✓] '{label}' langsung terdeteksi aman di Y={cy} (Bounds: {bounds})")
+                return True
+        except:
+            pass
+
+    # 2. Coba gulir ke bawah (scroll down) bertahap
+    for attempt in range(max_scrolls):
+        print(f"[*] Melakukan scroll down untuk mencari '{label}' (Percobaan {attempt+1}/{max_scrolls})...")
+        scroll_down(d)
+        time.sleep(1.0)
+        
+        if selector.exists:
+            try:
+                info = selector.info
+                bounds = info.get('bounds', {})
+                top = bounds.get('top', 0)
+                bottom = bounds.get('bottom', 0)
+                height = bottom - top
+                cy = (top + bottom) // 2
+                if height > 0 and target_viewport[0] < cy < target_viewport[1]:
+                    print(f"[✓] '{label}' ditemukan setelah scroll down di Y={cy}")
+                    return True
+            except:
+                pass
+
+    # 3. Jika belum ditemukan, coba gulir ke atas (scroll up) bertahap
+    for attempt in range(max_scrolls):
+        print(f"[*] Melakukan scroll up untuk mencari '{label}' (Percobaan {attempt+1}/{max_scrolls})...")
+        scroll_up(d)
+        time.sleep(1.0)
+        
+        if selector.exists:
+            try:
+                info = selector.info
+                bounds = info.get('bounds', {})
+                top = bounds.get('top', 0)
+                bottom = bounds.get('bottom', 0)
+                height = bottom - top
+                cy = (top + bottom) // 2
+                if height > 0 and target_viewport[0] < cy < target_viewport[1]:
+                    print(f"[✓] '{label}' ditemukan setelah scroll up di Y={cy}")
+                    return True
+            except:
+                pass
+                
+    return selector.exists
+
+def safe_click_robust(d, selector, label="", max_scrolls=4, offset_x=0, offset_y=0, fallback_coord=None):
+    """
+    Mencari elemen secara kokoh dengan smart scroll, memposisikannya di tengah layar,
+    lalu mengklik koordinat center elemen (ditambah offset jika ada).
+    Jika elemen tidak ditemukan di XML, ia akan menggunakan koordinat fallback fisik (cadangan)
+    yang diskalakan secara dinamis berdasarkan resolusi layar asli perangkat.
+    """
+    # Lakukan pencarian dua arah untuk memastikan posisi terbaik
+    found = scroll_to_element_bidirectional(d, selector, label, max_scrolls=max_scrolls)
+    
+    if found:
+        try:
+            cx, cy = selector.center()
+            cx_offset = cx + offset_x
+            cy_offset = cy + offset_y
+            print(f"[✓] Mengklik '{label}' di koordinat ({cx_offset}, {cy_offset}) [Offset X:{offset_x}, Y:{offset_y}]")
+            d.click(cx_offset, cy_offset)
+            time.sleep(1.2)
+            return True
+        except Exception as e:
+            print(f"[⚠️] Gagal mengklik '{label}' via center ({e}), mencoba klik bawaan...")
+            try:
+                selector.click()
+                time.sleep(1.2)
+                return True
+            except Exception as e2:
+                print(f"[✗] Gagal klik bawaan '{label}': {e2}")
+                
+    # Fallback ke koordinat fisik cadangan yang diskalakan secara dinamis
+    if fallback_coord:
+        fx_base, fy_base = fallback_coord
+        try:
+            # Dapatkan resolusi layar perangkat saat ini secara dinamis
+            width, height = d.window_size()
+            
+            # Skalakan koordinat berdasarkan rasio resolusi dasar (720x1604)
+            fx = int((fx_base / 720.0) * width)
+            fy = int((fy_base / 1604.0) * height)
+            
+            print(f"[⚠️] Elemen '{label}' tidak terdeteksi di UI XML. Mengklik koordinat fallback terskala: ({fx}, {fy}) [Base: ({fx_base}, {fy_base}) di layar {width}x{height}]")
+            d.click(fx, fy)
+            time.sleep(1.2)
+            return True
+        except Exception as scale_err:
+            print(f"[✗] Gagal melakukan scaling koordinat fallback: {scale_err}. Mencoba koordinat asli...")
+            try:
+                d.click(fx_base, fy_base)
+                time.sleep(1.2)
+                return True
+            except Exception as e3:
+                print(f"[✗] Gagal klik fallback koordinat asli: {e3}")
+        
+    return False
+
+def safe_type_robust(d, selector, text_val, label="", max_scrolls=3):
+    """
+    Mencari field input, menempatkannya di posisi tengah layar via scroll,
+    memfokuskannya, membersihkan teks lama, mengetik karakter secara aman,
+    dan menyembunyikan keyboard virtual secara aman setelah selesai.
+    """
+    found = scroll_to_element_bidirectional(d, selector, label, max_scrolls=max_scrolls)
+    if not found:
+        print(f"[✗] Field input '{label}' tidak ditemukan di layar.")
+        return False
+        
+    try:
+        # Klik field untuk memfokuskan kursor
+        cx, cy = selector.center()
+        print(f"[*] Fokus ke field '{label}' di ({cx}, {cy})...")
+        d.click(cx, cy)
+        time.sleep(0.5)
+        
+        # Bersihkan field input secara bersih
+        print(f"🧹 Membersihkan teks lama pada '{label}'...")
+        selector.clear_text()
+        time.sleep(0.3)
+        
+        # Ketik teks karakter demi karakter via adb shell input text
+        # Jeda mikro 0.06 detik mencegah typo/lag tombol pada emulator lambat
+        print(f"✍️ Mengetik '{text_val}' ke field '{label}'...")
+        for char in str(text_val):
+            d.shell(f"input text {char}")
+            time.sleep(0.06)
+            
+        time.sleep(0.5)
+        
+        # Tutup keyboard virtual secara aman
+        hide_keyboard_safe(d)
+        return True
+    except Exception as e:
+        print(f"[✗] Gagal mengetik pada field '{label}': {e}")
+        return False
+
 def select_random_photo(d, random_index=0):
     current_pkg = d.info.get('currentPackageName', '')
     print(f"[*] Package galeri terdeteksi: '{current_pkg}' (mencari indeks foto: {random_index})")
     
-    # 1. Google Photos / Media Provider / Samsung Gallery
+    # 1. Deteksi dinamis berbasis deskripsi/teks "Foto diambil pada"
+    try:
+        photo_items = d(descriptionContains="Foto diambil pada")
+        if not photo_items.exists:
+            photo_items = d(textContains="Foto diambil pada")
+        
+        if photo_items.exists:
+            # Coba ambil instance spesifik sesuai indeks
+            photo_item = d(descriptionContains="Foto diambil pada", instance=random_index)
+            if not photo_item.exists:
+                photo_item = d(textContains="Foto diambil pada", instance=random_index)
+            
+            if photo_item.exists:
+                print(f"[✓] Menemukan foto via deskripsi/teks 'Foto diambil pada' (Indeks: {random_index})")
+                return photo_item
+    except Exception as e:
+        print(f"[!] Error saat deteksi dinamis 'Foto diambil pada': {e}")
+        
+    # 2. Google Photos / Media Provider / Samsung Gallery bawaan
     if "media.module" in current_pkg or "sec.android.gallery" in current_pkg:
         photo_item = d(packageName=current_pkg, className="android.widget.FrameLayout", clickable=True, instance=random_index)
         if safe_exists(d, photo_item, f"Foto Google/Samsung Indeks {random_index}", retries=1):
@@ -187,7 +389,7 @@ def select_random_photo(d, random_index=0):
             except:
                 return photo_item
             
-    # 2. Android DocumentsUI (Oppo, Vivo, Xiaomi, dll.)
+    # 3. Android DocumentsUI (Oppo, Vivo, Xiaomi, dll.)
     elif "documentsui" in current_pkg:
         # Gunakan RecyclerView 'dir_list' sebagai parent agar 100% aman (tidak salah klik tombol sistem)
         dir_list = d(packageName="com.android.documentsui", resourceId="com.android.documentsui:id/dir_list")
@@ -202,7 +404,22 @@ def select_random_photo(d, random_index=0):
         if safe_exists(d, photo_item_title, f"Title Foto DocumentsUI Indeks {random_index}", retries=1):
             return photo_item_title
 
-    # 3. Fallback Terakhir ke Indeks 0 jika indeks acak tidak ditemukan
+    # 4. Fallback Koordinat Fisik (berdasarkan layout grid dump visual user)
+    fallback_coords = {
+        0: (179, 1385),
+        1: (540, 1385),
+        2: (901, 1385),
+        3: (179, 1746),
+        4: (540, 1746),
+        5: (901, 1746)
+    }
+    
+    if random_index in fallback_coords:
+        coord = fallback_coords[random_index]
+        print(f"[⚠️] Menggunakan koordinat fallback fisik untuk indeks {random_index}: {coord}")
+        return coord
+
+    # 5. Fallback Terakhir ke Indeks 0 jika indeks acak tidak ditemukan
     if random_index > 0:
         print(f"[⚠️] Foto indeks {random_index} tidak ditemukan/valid, mencoba mengambil foto indeks 0...")
         return select_random_photo(d, 0)
@@ -213,11 +430,8 @@ def back_to_main_page(d):
     print("[⚠️] Mencoba kembali ke halaman utama Daftar Assignment (recovery)...")
     # Menutup keyboard
     print("[*] Menutup keyboard virtual agar bisa klik BACK")
-    btn_blok = d(textContains="BLOK")
-    if btn_blok.exists:
-        btn_blok.click()
-        time.sleep(1.0)
-        
+    d.press("back")
+    time.sleep(1.0)
     d.press("back")
     time.sleep(1.5)
     
@@ -254,35 +468,53 @@ def back_to_main_page(d):
         else:
             print("[⚠️] Peringatan: Halaman utama tidak terdeteksi aktif. Silakan posisikan layar HP pada halaman Daftar Assignment secara manual.")
 def check_remote_self_destruct():
-    """
-    Memeriksa konfigurasi remote JSON. 
-    Jika 'self_destruct' bernilai True, file main.py akan dihapus dan skrip dihentikan.
-    """
+    
     print("[*] Memeriksa remote config...")
     try:
+        timestamp = int(time.time())
+        urls = f"{CONFIG_URL}?t={timestamp}" 
         req = urllib.request.Request(
-            CONFIG_URL, 
-            headers={'User-Agent': 'Mozilla/5.0'}
+            urls,
+            headers={'User-Agent': 'Mozilla/5.0',
+            'Cache-Control': 'no-cache'}
         )
         with urllib.request.urlopen(req, timeout=5) as response:
             data = json.loads(response.read().decode('utf-8'))
             
-            # Mendukung variasi key/struktur data JSON
+            # Fungsi pembantu untuk mengecek nilai kebenaran dengan aman
+            def is_truthy(value):
+                
+                if isinstance(value, bool):
+                    return value
+                if isinstance(value, str):
+                    return value.lower() in ('true', '1', 'yes', 'on')
+                if isinstance(value, (int, float)):
+                    return bool(value)
+                return False
+
+            # Cek beberapa kemungkinan key
             is_active = False
             if isinstance(data, dict):
-                is_active = data.get("self_destruct") or data.get("active") or data.get("status") == "expired"
+                # Prioritaskan self_destruct, lalu active, lalu status == 'expired'
+                if "self_destruct" in data:
+                    is_active = is_truthy(data["self_destruct"])
+                elif "active" in data:
+                    is_active = is_truthy(data["active"])
+                elif data.get("status") == "expired":
+                    is_active = True
 
             if is_active:
-                print("Memulai prosedur pembersihan...")
+                print("⚠️ Self‑destruct aktif! Memulai prosedur pembersihan...")
                 current_file = os.path.abspath(__file__)
                 if os.path.exists(current_file):
                     os.remove(current_file)
                     print(f"[✓] File '{os.path.basename(current_file)}' berhasil dihapus.")
                 sys.exit(0)
             else:
-                print("Memulai prosedur pembersihan...")
+                print("✅ Self‑destruct tidak aktif, melanjutkan aplikasi...")
+
     except Exception as e:
-        # Pilihan: Tetap berjalan normal jika koneksi gagal/URL error
+        # Jika gagal terhubung, tetap lanjutkan (sesuai keinginan)
         print(f"[⚠️] Gagal terhubung ke remote config ({e}). Melanjutkan aplikasi...")
         
 def main():
@@ -354,59 +586,52 @@ def main():
             try:
                 print("[✓] Tombol FAB ('id.go.bpsfasih:id/expendable_fab') ditemukan.")
                 # Melakukan klik FAB Utama
-                print("[*] Melakukan klik pada tombol FAB...")
-                fab_selector.click()
+                safe_click_robust(d, fab_selector, "FAB Utama", max_scrolls=0)
                 time.sleep(1.5)
                 
                 # Tunggu dan klik tombol Tambah Assignment
-                print("[*] Menunggu tombol 'Tambah Assignment' muncul...")
-                btn_add = d.xpath('//*[@resource-id="id.go.bpsfasih:id/fab_addAssignment"]')
-                if not btn_add.exists:
-                    raise Exception("Tombol 'Tambah Assignment' tidak muncul di layar.")
-                
-                print("[✓] Tombol 'Tambah Assignment' ditemukan. Melakukan klik...")
-                btn_add.click()
+                btn_add = d(resourceId="id.go.bpsfasih:id/fab_addAssignment")
+                if not safe_click_robust(d, btn_add, "Tambah Assignment", max_scrolls=0):
+                    btn_add_xpath = d.xpath('//*[@resource-id="id.go.bpsfasih:id/fab_addAssignment"]')
+                    if btn_add_xpath.exists:
+                        btn_add_xpath.click()
+                    else:
+                        raise Exception("Tombol 'Tambah Assignment' tidak muncul di layar.")
                 time.sleep(1.5)
                 
                 # Tunggu dan klik tombol YA pada Bottom Dialog
-                print("[*] Menunggu bottom dialog konfirmasi...")
                 btn_yes = d(resourceId="id.go.bpsfasih:id/rButton_bottomDialog")
-                if not btn_yes.exists:
+                if not safe_click_robust(d, btn_yes, "YA Bottom Dialog", max_scrolls=0, fallback_coord=(519, 1397)):
                     raise Exception("Tombol Bottom Dialog tidak ditemukan.")
-                
-                btn_text = btn_yes.info.get('text', 'YA')
-                print(f"[✓] Tombol Bottom Dialog '{btn_text}' ditemukan. Melakukan klik...")
-                btn_yes.click()
                 
                 # Tunggu transisi ke halaman Form (menunggu tombol Ambil Waktu muncul)
                 print("[*] Menunggu transisi ke halaman FormGearActivity (maksimal 10 detik)...")
-                btn_time = None
+                btn_time = d(text="Ambil Waktu")
+                time_found = False
                 for wait_form in range(10):
-                    if safe_exists(d, d(text="Ambil Waktu"), "Tombol Ambil Waktu Awal", retries=1):
-                        btn_time = d(text="Ambil Waktu")
+                    if btn_time.exists:
+                        time_found = True
                         break
                     time.sleep(1.0)
                     print(f"[!] Menunggu FormGearActivity memuat (detik ke-{wait_form+1}/10)...")
-                    
-                if btn_time is None:
+                     
+                if not time_found:
                     raise Exception("Tombol 'Ambil Waktu' tidak ditemukan di layar setelah menunggu FormGearActivity memuat.")
                 
-                print("[✓] Tombol 'Ambil Waktu' ditemukan. Melakukan klik...")
-                btn_time.click()
+                safe_click_robust(d, btn_time, "Tombol Ambil Waktu", max_scrolls=2, fallback_coord=(360, 734))
                 time.sleep(1.5)
                 
                 # Klik tombol 'Ya' pada dialog konfirmasi
                 btn_confirm_yes = d(text="Ya")
-                if not btn_confirm_yes.exists:
+                if not safe_click_robust(d, btn_confirm_yes, "Konfirmasi Ya Jam", max_scrolls=0, fallback_coord=(360, 852)):
                     raise Exception("Tombol konfirmasi 'Ya' tidak ditemukan.")
-                
-                print("[✓] Tombol konfirmasi 'Ya' ditemukan. Melakukan klik...")
-                btn_confirm_yes.click()
                 time.sleep(3.0)
                 
                 # ==================================================================
                 # PROSES CARI & VALIDASI IDPEL DARI CSV
                 # ==================================================================
+                scroll_up(d)
+                time.sleep(1.0)
                 for idx, row in enumerate(rows):
                     idpel = row.get('IDPEL', '').strip()
                     if not idpel:
@@ -415,39 +640,18 @@ def main():
                     print(f"\n--- [Pengecekan IDPEL Baris #{idx+1}] ---")
                     print(f"[*] Mencoba menginput IDPEL: {idpel}")
                     
-                    # Retry detection untuk mengantisipasi rendering WebView yang lambat
-                    idpel_input = None
-                    for check_attempt in range(5):
-                        idpel_input = d(resourceId="textfield-cl-3-input")
-                        if idpel_input.exists:
-                            break
-                        print(f"[!] Menunggu field input ID Pelanggan muncul (percobaan {check_attempt+1}/5)...")
-                        time.sleep(1.5)
-                        
-                    if not idpel_input or not idpel_input.exists:
-                        raise Exception("Input field ID Pelanggan ('textfield-cl-3-input') tidak ditemukan di layar.")
+                    idpel_input = d(resourceId="textfield-cl-3-input")
                     
-                    # Bersihkan field input dan ketik ID Pelanggan baru
-                    idpel_input.clear_text()
-                    idpel_input.set_text(idpel)
-                    print("[✓] ID Pelanggan berhasil ditulis.")
+                    # Gunakan safe_type_robust untuk menulis IDPEL dan menutup keyboard
+                    if not safe_type_robust(d, idpel_input, idpel, "Field ID Pelanggan", max_scrolls=3):
+                        raise Exception("Gagal menginput ID Pelanggan.")
                     
-                    # Sembunyikan keyboard virtual agar tidak menutupi tombol
-                    print("[*] Menyembunyikan keyboard virtual...")
-                    d.press("back")
-                    time.sleep(1.0)
-                    
-                    # Klik Cek ID Pelanggan (2 kali)
+                    # Klik Cek ID Pelanggan secara dinamis
                     btn_check = d(text="Cek ID Pelanggan")
-                    if not btn_check.exists:
+                    if not safe_click_robust(d, btn_check, "Tombol Cek ID Pelanggan", max_scrolls=3, fallback_coord=(150, 434)):
                         raise Exception("Tombol 'Cek ID Pelanggan' tidak ditemukan.")
-                        
-                    print("[*] Klik pertama 'Cek ID Pelanggan'...")
-                    btn_check.click()
                     time.sleep(1.0)
                     
-                    print("[*] Klik kedua 'Cek ID Pelanggan'...")
-                    btn_check.click()
                     # Tunggu hasil verifikasi dari server muncul (loading handle)
                     print("[*] Menunggu hasil verifikasi ID Pelanggan dari server (max 15 detik)...")
                     verified = False
@@ -507,32 +711,10 @@ def main():
                     
                 # Jika valid, lanjut cari pilihan '1. Berhasil didata'
                 print("\n[✓] Lanjut mengisi data untuk IDPEL: " + valid_row.get('IDPEL'))
-                print("[*] Mencari pilihan '1. Berhasil didata' dengan menggulir layar...")
                 btn_status = d(text="1. Berhasil didata")
-                status_found = False
-                for scroll_attempt in range(5):
-                    if safe_exists(d, btn_status, "Status Cek", retries=1):
-                        status_found = True
-                        break
-                    print(f"[!] Pilihan '1. Berhasil didata' belum terlihat, menggulir layar (percobaan {scroll_attempt+1}/5)...")
-                    scroll_down(d)
-                    time.sleep(1.0)
-                    
-                if not status_found or not safe_exists(d, btn_status, "Status Final"):
-                    raise Exception("Pilihan '1. Berhasil didata' tidak ditemukan.")
                 
-                # Log data debug untuk elemen btn_status
-                try:
-                    print("\n=== DEBUG ELEMEN '1. Berhasil didata' ===")
-                    print(f"Text: {btn_status.info.get('text')}")
-                    print(f"Class: {btn_status.info.get('className')}")
-                    print(f"Bounds: {btn_status.info.get('bounds')}")
-                    print(f"Center: {btn_status.center()}")
-                    print(f"Clickable: {btn_status.info.get('clickable')}")
-                    print(f"Enabled: {btn_status.info.get('enabled')}")
-                    print(f"==========================================\n")
-                except Exception as debug_err:
-                    print(f"[!] Gagal mengambil data debug elemen: {debug_err}")
+                # Bawa ke tengah layar dengan scroll dinamis
+                scroll_to_element_bidirectional(d, btn_status, "Status Berhasil Didata", max_scrolls=5)
                 
                 # Tentukan offset klik dinamis jika ukuran elemen terdeteksi sangat kecil (mikro)
                 offset_x_val = 0
@@ -543,7 +725,7 @@ def main():
                     width = bounds.get('right', 0) - bounds.get('left', 0)
                     if width < 50:
                         # Geser 250px ke kanan dan turun 10px sesuai masukan visual pengguna di HP baru
-                        print(f"[!] Deteksi elemen mikro (lebar {width}px). Mengalihkan sentuhan +250px ke kanan, +10px ke bawah.")
+                        print(f"[!] Deteksi elemen mikro (lebar {width}px). Mengalihkan sentuhan +150px ke kanan, +10px ke bawah.")
                         offset_x_val = 150
                         offset_y_val = 10
                 except Exception as e:
@@ -551,10 +733,10 @@ def main():
                     
                 # Lakukan klik mantap pada pilihan '1. Berhasil didata'
                 print("[*] Melakukan klik pada pilihan '1. Berhasil didata'...")
-                safe_click(d, btn_status, "Status Berhasil Didata", offset_x=offset_x_val, offset_y=offset_y_val)
+                safe_click_robust(d, btn_status, "Status Berhasil Didata", max_scrolls=0, offset_x=offset_x_val, offset_y=offset_y_val, fallback_coord=(348, 1065))
                 time.sleep(1.5)
                 # Klik sekali lagi sebagai penegasan sentuhan WebView
-                safe_click(d, btn_status, "Status Berhasil Didata (Confirm)", offset_x=offset_x_val, offset_y=offset_y_val)
+                safe_click_robust(d, btn_status, "Status Berhasil Didata (Confirm)", max_scrolls=0, offset_x=offset_x_val, offset_y=offset_y_val, fallback_coord=(348, 1065))
                 time.sleep(2.0)
                 
                 # Geser ke bawah hingga tombol "Ambil Lokasi" terlihat di layar (sekaligus memverifikasi klik status)
@@ -565,34 +747,20 @@ def main():
                     if safe_exists(d, btn_location, "Ambil Lokasi Cek", retries=1):
                         location_found = True
                         break
-                    print(f"[!] Tombol 'Ambil Lokasi' belum terlihat, menggulir layar (percobaan {scroll_attempt+1}/5)...")
-                    scroll_down(d)
-                    time.sleep(1.0)
-                    
-                if not location_found or not safe_exists(d, btn_location, "Ambil Lokasi Final"):
-                    raise Exception("Gagal memverifikasi status '1. Berhasil didata': tombol 'Ambil Lokasi' tidak kunjung muncul di layar.")
-                
-                print("[✓] Pilihan '1. Berhasil didata' sukses terverifikasi aktif!")
-                print("[✓] Tombol 'Ambil Lokasi' ditemukan. Melakukan klik...")
-                safe_click(d, btn_location, "Tombol Ambil Lokasi")
+                if not safe_click_robust(d, btn_location, "Tombol Ambil Lokasi", max_scrolls=5, fallback_coord=(360, 1519)):
+                    raise Exception("Gagal memverifikasi status '1. Berhasil didata': tombol 'Ambil Lokasi' tidak ditemukan.")
                 time.sleep(1.5)
                 
                 # Klik 'AMBIL LANGSUNG'
                 btn_take_direct = d(resourceId="id.go.bpsfasih:id/lButton_bottomDialog", text="AMBIL LANGSUNG")
-                if not btn_take_direct.exists:
+                if not safe_click_robust(d, btn_take_direct, "AMBIL LANGSUNG", max_scrolls=0, fallback_coord=(201, 1397)):
                     raise Exception("Tombol 'AMBIL LANGSUNG' tidak ditemukan.")
-                
-                print("[✓] Tombol 'AMBIL LANGSUNG' ditemukan. Melakukan klik...")
-                btn_take_direct.click()
                 time.sleep(1.5)
                 
                 # Klik tombol 'Ya' pada dialog konfirmasi
                 btn_confirm_loc_yes = d(text="Ya")
-                if not btn_confirm_loc_yes.exists:
+                if not safe_click_robust(d, btn_confirm_loc_yes, "Konfirmasi Lokasi Ya", max_scrolls=0, fallback_coord=(359, 840)):
                     raise Exception("Tombol konfirmasi lokasi 'Ya' tidak ditemukan.")
-                
-                print("[✓] Tombol konfirmasi lokasi 'Ya' ditemukan. Melakukan klik...")
-                btn_confirm_loc_yes.click()
                 time.sleep(2.0)
                 
                 scroll_down(d)
@@ -601,11 +769,8 @@ def main():
                     time.sleep(2.0)
                     print(f"\n[*] Memulai proses pemilihan foto ke-{i}...")
                     btn_select_photo = d(text="Pilih")
-                    if not btn_select_photo.exists:
+                    if not safe_click_robust(d, btn_select_photo, f"Tombol Pilih Foto ke-{i}", max_scrolls=3, fallback_coord=(472, 1142)):
                         raise Exception(f"Tombol 'Pilih' ke-{i} tidak ditemukan di layar.")
-                    
-                    print(f"[✓] Tombol 'Pilih' ke-{i} ditemukan. Melakukan klik...")
-                    btn_select_photo.click()
                     time.sleep(3.5)
                     
                     # Tunggu dialog pilihan galeri muncul
@@ -642,56 +807,42 @@ def main():
                     
                     if photo_elem is not None:
                         print(f"[✓] Berhasil memilih foto galeri!")
-                        safe_click(d, photo_elem, f"Foto Indeks {random_photo_index}")
+                        safe_click_robust(d, photo_elem, f"Foto Indeks {random_photo_index}", max_scrolls=0)
+                        
+                        # Klik tombol 'Selesai' (Done) setelah memilih foto
+                        time.sleep(1.5)
+                        btn_selesai = d(text="Selesai")
+                        if btn_selesai.exists:
+                            print("[✓] Menemukan tombol 'Selesai' di layar, mengeklik...")
+                            btn_selesai.click()
+                        else:
+                            print("[⚠️] Tombol 'Selesai' tidak terdeteksi via teks. Mencoba koordinat fallback (861, 2172)...")
+                            safe_click(d, (861, 2172), "Tombol Selesai Fallback")
                     else:
                         raise Exception(f"Foto ke-{i} tidak ditemukan di galeri.")
                     time.sleep(2.0)
                 
                 # Proses Unggah
                 print("\n[*] Kedua foto berhasil dipilih. Memulai alur Unggah...")
-                upload_success = False
-                for attempt in range(1, 6):
-                    print(f"\n[*] Mencoba mencari tombol unggah (Percobaan ke-{attempt}/5)...")
-                    scroll_down(d)
-                    time.sleep(1.5)
-                    
-                    btn_upload = d(text="Unggah Foto")
-                    if not btn_upload.exists:
-                        btn_upload = d(textContains="Unggah")
-                    if not btn_upload.exists:
-                        btn_upload = d(description="Unggah Foto")
-                    if not btn_upload.exists:
-                        btn_upload = d(text="Unggah")
-                    if not btn_upload.exists:
-                        btn_upload = d(text="UNGGAH")
-                    
-                    if btn_upload.exists:
-                        print("[✓] Tombol 'Unggah' ditemukan. Melakukan klik...")
-                        btn_upload.click()
-                        time.sleep(1.5)
-                        
-                        btn_confirm_upload = d(text="Ya")
-                        if not btn_confirm_upload.exists:
-                            btn_confirm_upload = d(text="YA")
-                            
-                        if btn_confirm_upload.exists:
-                            btn_confirm_upload.click()
-                            time.sleep(6.0) # Jeda unggahan
-                            
-                            xml_check = d.dump_hierarchy()
-                            if xml_check and any(x in xml_check.lower() for x in ["terunggah", "terungah", "sudah terung"]):
-                                print("[✓] Teks konfirmasi unggahan sukses terdeteksi! (Sudah Terunggah)")
-                                upload_success = True
-                                break
-                            else:
-                                print("[!] Teks konfirmasi unggahan belum muncul di layar.")
-                        else:
-                            raise Exception("Dialog konfirmasi unggah 'Ya' tidak ditemukan.")
-                    else:
-                        print(f"[!] Tombol 'Unggah' belum terlihat di layar pada gulir ke-{attempt}. Mencoba gulir lagi...")
+                btn_upload = d(text="Unggah Foto")
+                if not btn_upload.exists:
+                    btn_upload = d(textContains="Unggah")
                 
+                if not safe_click_robust(d, btn_upload, "Tombol Unggah Foto", max_scrolls=5, fallback_coord=(424, 1346)):
+                    raise Exception("Tombol 'Unggah' tidak ditemukan.")
+                time.sleep(1.5)
+                
+                btn_confirm_upload = d(text="Ya")
+                if not btn_confirm_upload.exists:
+                    btn_confirm_upload = d(text="YA")
+                if not safe_click_robust(d, btn_confirm_upload, "Konfirmasi Unggah Ya", max_scrolls=0, fallback_coord=(359, 840)):
+                    raise Exception("Dialog konfirmasi unggah 'Ya' tidak ditemukan.")
+                time.sleep(6.0) # Jeda unggahan
+                
+                xml_check = d.dump_hierarchy()
+                upload_success = xml_check and any(x in xml_check.lower() for x in ["terunggah", "terungah", "sudah terung"])
                 if not upload_success:
-                    raise Exception("Gagal mengunggah foto setelah 5 kali percobaan gulir layar.")
+                    raise Exception("Gagal mengunggah foto.")
                 
                 # Klik tombol BERIKUTNYA BLOK II
                 print("[*] Mencari tombol 'BERIKUTNYA BLOK II'...")
@@ -699,10 +850,8 @@ def main():
                 if not btn_next_block.exists:
                     btn_next_block = d(text="BERIKUTNYA BLOK II")
                     
-                if not btn_next_block.exists:
+                if not safe_click_robust(d, btn_next_block, "BERIKUTNYA BLOK II", max_scrolls=3, fallback_coord=(535, 1533)):
                     raise Exception("Tombol 'BERIKUTNYA BLOK II' tidak ditemukan.")
-                
-                btn_next_block.click()
                 print("[✓] Pindah ke halaman form berikutnya (Blok II)!")
                 time.sleep(3.0)
                 
@@ -713,20 +862,23 @@ def main():
                 name_val = clean_name(valid_row.get('NAMA', ''))
                 print(f"[*] Mengisi Nama Penghuni: {name_val}")
                 
-                input_name = None
+                input_name = d(resourceId="r201").child(className="android.widget.EditText")
+                name_found = False
                 for name_attempt in range(6):
-                    input_name = d(resourceId="r201").child(className="android.widget.EditText")
-                    if not input_name.exists:
-                        input_name = d(resourceId="textfield-cl-30-input")
-                    if input_name.exists:
+                    if input_name.exists or d(resourceId="textfield-cl-30-input").exists:
+                        name_found = True
                         break
                     print(f"[!] Menunggu halaman Blok II memuat field Nama Penghuni (percobaan {name_attempt+1}/6)...")
                     time.sleep(1.5)
                     
-                if not input_name or not input_name.exists:
+                if not name_found:
                     raise Exception("Input Nama Penghuni tidak ditemukan setelah menunggu halaman memuat.")
                 
-                input_name.set_text(name_val)
+                if not input_name.exists:
+                    input_name = d(resourceId="textfield-cl-30-input")
+                    
+                if not safe_type_robust(d, input_name, name_val, "Nama Penghuni", max_scrolls=3):
+                    raise Exception("Gagal mengisi Nama Penghuni.")
                 time.sleep(1.0)
                 
                 # 2. Isi NIK Penghuni
@@ -735,18 +887,15 @@ def main():
                 input_nik = d(resourceId="r202").child(className="android.widget.EditText")
                 if not input_nik.exists:
                     input_nik = d(resourceId="textfield-cl-32-input")
-                if not input_nik.exists:
-                    raise Exception("Input NIK Penghuni tidak ditemukan.")
-                
-                input_nik.set_text(nik_val)
+                if not safe_type_robust(d, input_nik, nik_val, "NIK Penghuni", max_scrolls=3):
+                    raise Exception("Gagal mengisi NIK Penghuni.")
                 time.sleep(1.0)
                 
                 # 3. Klik Cek NIK
                 print("[*] Mengklik tombol 'Cek NIK'...")
                 btn_check_nik = d(text="Cek NIK")
-                if not btn_check_nik.exists:
+                if not safe_click_robust(d, btn_check_nik, "Cek NIK", max_scrolls=3, fallback_coord=(299, 662)):
                     raise Exception("Tombol 'Cek NIK' tidak ditemukan.")
-                btn_check_nik.click()
                 time.sleep(2.5)
                 
                 # 4. Isi Nomor Telepon/HP
@@ -755,17 +904,11 @@ def main():
                 input_hp = d(resourceId="r203").child(className="android.widget.EditText")
                 if not input_hp.exists:
                     input_hp = d(resourceId="textfield-cl-34-input")
-                if not input_hp.exists:
-                    raise Exception("Input Nomor Telepon/HP tidak ditemukan.")
-                
-                input_hp.set_text(hp_val)
+                if not safe_type_robust(d, input_hp, hp_val, "Nomor HP", max_scrolls=3):
+                    raise Exception("Gagal mengisi Nomor Telepon/HP.")
                 time.sleep(1.0)
                 
-                # 5. Scroll ke bawah 1 kali
-                scroll_down(d)
-                time.sleep(1.5)
-                
-                # 6. Klik '1. Milik sendiri'
+                # 5. Klik '1. Milik sendiri'
                 print("[*] Mencari pilihan '1. Milik sendiri'...")
                 btn_own_house = d(text="1. Milik sendiri")
                 if not btn_own_house.exists:
@@ -773,144 +916,80 @@ def main():
                 if not btn_own_house.exists:
                     btn_own_house = d(textContains="Milik Sendiri")
                     
-                if not btn_own_house.exists:
-                    raise Exception("Pilihan '1. Milik sendiri' tidak ditemukan.")
-                
-                # Log data debug untuk elemen btn_own_house
-                try:
-                    print("\n=== DEBUG ELEMEN '1. Milik sendiri' ===")
-                    print(f"Text: {btn_own_house.info.get('text')}")
-                    print(f"Class: {btn_own_house.info.get('className')}")
-                    print(f"Bounds: {btn_own_house.info.get('bounds')}")
-                    print(f"Center: {btn_own_house.center()}")
-                    print(f"==========================================\n")
-                except Exception as debug_err:
-                    print(f"[!] Gagal mengambil data debug elemen: {debug_err}")
-                
                 # Tentukan offset klik dinamis jika ukuran elemen terdeteksi sangat kecil (mikro)
                 offset_x_val = 0
                 offset_y_val = 40 # Default offset Y ke bawah
+                
+                # Bawa ke tengah layar
+                scroll_to_element_bidirectional(d, btn_own_house, "Milik sendiri", max_scrolls=3)
+                
                 try:
                     btn_info = btn_own_house.info
                     bounds = btn_info.get('bounds', {})
                     width = bounds.get('right', 0) - bounds.get('left', 0)
                     if width < 50:
-                        # Geser 250px ke kanan dan turun 10px sesuai masukan visual pengguna
-                        print(f"[!] Deteksi elemen mikro (lebar {width}px). Mengalihkan sentuhan +250px ke kanan, +10px ke bawah.")
+                        print(f"[!] Deteksi elemen mikro (lebar {width}px). Mengalihkan sentuhan +100px ke kanan, +10px ke bawah.")
                         offset_x_val = 100
                         offset_y_val = 10
                 except Exception as e:
                     print(f"[!] Gagal kalkulasi bounds pilihan kepemilikan, menggunakan default: {e}")
                     
-                print("[✓] Pilihan '1. Milik sendiri' ditemukan. Melakukan klik...")
-                safe_click(d, btn_own_house, "Milik sendiri", offset_x=offset_x_val, offset_y=offset_y_val)
+                if not safe_click_robust(d, btn_own_house, "Milik sendiri", max_scrolls=0, offset_x=offset_x_val, offset_y=offset_y_val, fallback_coord=(339, 995)):
+                    raise Exception("Pilihan '1. Milik sendiri' tidak ditemukan.")
                 time.sleep(1.0)
-                # Klik sekali lagi untuk penegasan sentuhan di WebView
-                safe_click(d, btn_own_house, "Milik sendiri (Confirm)", offset_x=offset_x_val, offset_y=offset_y_val)
+                safe_click_robust(d, btn_own_house, "Milik sendiri (Confirm)", max_scrolls=0, offset_x=offset_x_val, offset_y=offset_y_val, fallback_coord=(339, 995))
                 time.sleep(1.0)
                 
-                # 7. Klik 'BERIKUTNYA BLOK III'
+                # 6. Klik 'BERIKUTNYA BLOK III'
                 btn_next_block3 = d(resourceId="fasih-form-nav-next-button")
                 if not btn_next_block3.exists:
                     btn_next_block3 = d(text="BERIKUTNYA BLOK III")
-                if not btn_next_block3.exists:
+                if not safe_click_robust(d, btn_next_block3, "BERIKUTNYA BLOK III", max_scrolls=3, fallback_coord=(535, 1533)):
                     raise Exception("Tombol 'BERIKUTNYA BLOK III' tidak ditemukan.")
-                
-                btn_next_block3.click()
-                time.sleep(3.0)
-                
-                # --- PENGISIAN BLOK III ---
-                print("\n[*] Memulai pengisian data BLOK III...")
-                
-                # 1. Pilih Provinsi (Ketik "JAWA TENGAH" lalu pilih opsi - Menunggu halaman Blok III memuat)
-                edit_prov = None
+                time.sleep(3.0)                # 1. Pilih Provinsi (Ketik "JAWA TENGAH" lalu pilih opsi - Menunggu halaman Blok III memuat)
+                edit_prov = d.xpath('//*[@resource-id="r301a"]//android.widget.EditText')
+                prov_found = False
                 for prov_attempt in range(6):
-                    edit_prov = d.xpath('//*[@resource-id="r301a"]//android.widget.EditText')
                     if edit_prov.exists:
+                        prov_found = True
                         break
                     print(f"[!] Menunggu halaman Blok III memuat field Provinsi (percobaan {prov_attempt+1}/6)...")
                     time.sleep(1.5)
                     
-                if not edit_prov or not edit_prov.exists:
+                if not prov_found:
                     raise Exception("Field Provinsi tidak ditemukan setelah menunggu halaman memuat.")
                     
-                print(f"[*] Mengisi Provinsi: {PROVINSI}...")
-                edit_prov.click()
-                time.sleep(1.0)
-                edit_prov.set_text(PROVINSI)
-                time.sleep(2.0)
+                if not safe_type_robust(d, edit_prov, PROVINSI, "Field Provinsi", max_scrolls=3):
+                    raise Exception("Gagal mengisi Provinsi.")
+                time.sleep(1.5)
                 
                 opt_prov = d(textContains=PROVINSI, className="android.widget.TextView")
-                if opt_prov.exists:
-                    print(f"[✓] Opsi Provinsi '{PROVINSI}' ditemukan di layar. Melakukan klik...")
-                    opt_prov.click()
-                else:
-                    try:
-                        bounds = edit_prov.info.get('bounds', {})
-                        cx = (bounds['left'] + bounds['right']) // 2
-                        height = bounds['bottom'] - bounds['top']
-                        target_y = bounds['bottom'] + height
-                        print(f"[⚠️] Opsi Provinsi tidak terdeteksi. Melakukan klik fallback dinamis di bawah box: ({cx}, {target_y})...")
-                        d.click(cx, target_y)
-                    except Exception as fe:
-                        print(f"[!] Gagal kalkulasi fallback: {fe}. Fallback statis ke (500, 1040)...")
-                        d.click(500, 1040)
+                if not safe_click_robust(d, opt_prov, f"Opsi Provinsi {PROVINSI}", max_scrolls=2, fallback_coord=(450, 576)):
+                    raise Exception("Opsi Provinsi tidak ditemukan.")
                 time.sleep(1.0)
                 
                 # 2. Pilih Kabupaten/Kota
-                print(f"[*] Mengisi Kabupaten/Kota: {KABUPATEN}...")
                 edit_kab = d.xpath('//*[@resource-id="r301b"]//android.widget.EditText')
-                if not edit_kab.exists:
-                    raise Exception("Field Kabupaten/Kota tidak ditemukan.")
-                edit_kab.click()
-                time.sleep(1.0)
-                edit_kab.set_text(KABUPATEN)
-                time.sleep(2.0)
+                if not safe_type_robust(d, edit_kab, KABUPATEN, "Field Kabupaten/Kota", max_scrolls=3):
+                    raise Exception("Gagal mengisi Kabupaten/Kota.")
+                time.sleep(1.5)
                 
                 opt_kab = d(textContains=KABUPATEN, className="android.widget.TextView")
-                if opt_kab.exists:
-                    print(f"[✓] Opsi Kabupaten '{KABUPATEN}' ditemukan di layar. Melakukan klik...")
-                    opt_kab.click()
-                else:
-                    try:
-                        bounds = edit_kab.info.get('bounds', {})
-                        cx = (bounds['left'] + bounds['right']) // 2
-                        height = bounds['bottom'] - bounds['top']
-                        target_y = bounds['bottom'] + height
-                        print(f"[⚠️] Opsi Kabupaten tidak terdeteksi. Melakukan klik fallback dinamis di bawah box: ({cx}, {target_y})...")
-                        d.click(cx, target_y)
-                    except Exception as fe:
-                        print(f"[!] Gagal kalkulasi fallback: {fe}. Fallback statis ke (500, 1300)...")
-                        d.click(500, 1300)
+                if not safe_click_robust(d, opt_kab, f"Opsi Kabupaten {KABUPATEN}", max_scrolls=2, fallback_coord=(450, 692)):
+                    raise Exception("Opsi Kabupaten tidak ditemukan.")
                 time.sleep(1.0)
                 
                 # 3. Pilih Kecamatan
                 kec_raw = valid_row.get('KECAMATAN', '').strip().upper()
                 kec_val = clean_wilayah_name(kec_raw)
-                print(f"[*] Mengisi Kecamatan: {kec_val}...")
                 edit_kec = d.xpath('//*[@resource-id="r301c"]//android.widget.EditText')
-                if not edit_kec.exists:
-                    raise Exception("Field Kecamatan tidak ditemukan.")
-                edit_kec.click()
-                time.sleep(1.0)
-                edit_kec.set_text(kec_val)
-                time.sleep(2.0)
+                if not safe_type_robust(d, edit_kec, kec_val, "Field Kecamatan", max_scrolls=3):
+                    raise Exception("Gagal mengisi Kecamatan.")
+                time.sleep(1.5)
                 
                 opt_kec = d(textContains=kec_val, className="android.widget.TextView")
-                if opt_kec.exists:
-                    print(f"[✓] Opsi Kecamatan '{kec_val}' ditemukan di layar. Melakukan klik...")
-                    opt_kec.click()
-                else:
-                    try:
-                        bounds = edit_kec.info.get('bounds', {})
-                        cx = (bounds['left'] + bounds['right']) // 2
-                        height = bounds['bottom'] - bounds['top']
-                        target_y = bounds['bottom'] + height
-                        print(f"[⚠️] Opsi Kecamatan tidak terdeteksi. Melakukan klik fallback dinamis di bawah box: ({cx}, {target_y})...")
-                        d.click(cx, target_y)
-                    except Exception as fe:
-                        print(f"[!] Gagal kalkulasi fallback: {fe}. Fallback statis ke (500, 1560)...")
-                        d.click(500, 1560)
+                if not safe_click_robust(d, opt_kec, f"Opsi Kecamatan {kec_val}", max_scrolls=2, fallback_coord=(450, 802)):
+                    raise Exception("Opsi Kecamatan tidak ditemukan.")
                 time.sleep(1.0)
                 
                 # 4. Pilih Desa/Kelurahan
@@ -918,228 +997,138 @@ def main():
                 if not des_raw:
                     des_raw = valid_row.get('ALAMAT', '').strip().upper()
                 des_val = clean_wilayah_name(des_raw)
-                print(f"[*] Mengisi Desa/Kelurahan: {des_val}...")
-                
                 edit_des = d.xpath('//*[@resource-id="r301d"]//android.widget.EditText')
-                if not edit_des.exists:
-                    raise Exception("Field Desa/Kelurahan tidak ditemukan.")
-                edit_des.click()
-                time.sleep(1.0)
-                edit_des.set_text(des_val)
-                time.sleep(2.0)
+                if not safe_type_robust(d, edit_des, des_val, "Field Desa/Kelurahan", max_scrolls=3):
+                    raise Exception("Gagal mengisi Desa/Kelurahan.")
+                time.sleep(1.5)
                 
                 opt_des = d(textContains=des_val, className="android.widget.TextView")
-                if opt_des.exists:
-                    print(f"[✓] Opsi Desa/Kelurahan '{des_val}' ditemukan di layar. Melakukan klik...")
-                    opt_des.click()
-                else:
-                    try:
-                        bounds = edit_des.info.get('bounds', {})
-                        cx = (bounds['left'] + bounds['right']) // 2
-                        height = bounds['bottom'] - bounds['top']
-                        target_y = bounds['bottom'] + height
-                        print(f"[⚠️] Opsi Desa/Kelurahan tidak terdeteksi. Melakukan klik fallback dinamis di bawah box: ({cx}, {target_y})...")
-                        d.click(cx, target_y)
-                    except Exception as fe:
-                        print(f"[!] Gagal kalkulasi fallback: {fe}. Fallback statis ke (524, 1820)...")
-                        d.click(524, 1820)
+                if not safe_click_robust(d, opt_des, f"Opsi Desa/Kelurahan {des_val}", max_scrolls=2, fallback_coord=(472, 915)):
+                    raise Exception("Opsi Desa/Kelurahan tidak ditemukan.")
                 time.sleep(1.0)
                 
                 # 5. Isi Alamat
                 alamat_val = valid_row.get('ALAMAT', '').strip()
                 if not alamat_val:
                     alamat_val = des_val
-                print(f"[*] Mengisi Alamat: {alamat_val}...")
                 edit_alamat = d.xpath('//*[@resource-id="r301e"]//android.widget.EditText')
                 if not edit_alamat.exists:
+                    edit_alamat = d(resourceId="r301e").child(className="android.widget.EditText")
+                    
+                if not safe_type_robust(d, edit_alamat, alamat_val, "Field Alamat", max_scrolls=3):
                     raise Exception("Field Alamat tidak ditemukan.")
-                edit_alamat.set_text(alamat_val)
                 time.sleep(1.0)
                 
-                # Menutup keyboard
-                print("[*] Menutup keyboard virtual di halaman Blok III...")
-                btn_blok = d(textContains="BLOK")
-                if btn_blok.exists:
-                    btn_blok.click()
-                    time.sleep(1.0)
-                
-                # 6. Scroll ke bawah
-                scroll_down(d)
-                time.sleep(1.5)
+                # Tutup keyboard dan geser agar field Jumlah Keluarga terlihat
+                hide_keyboard_safe(d)
+                scroll_down_small(d)
+                time.sleep(1.0)
                 
                 # Mengisi Jumlah Keluarga (302a) dengan '1' via Increment/Decrement cepat
                 print("[*] Menyesuaikan Jumlah Keluarga menjadi '1'...")
                 edit_jml_kel = d.xpath('//*[@resource-id="r302a"]//android.widget.EditText')
+                if not edit_jml_kel.exists:
+                    scroll_down(d)
+                    time.sleep(1.0)
+                    edit_jml_kel = d.xpath('//*[@resource-id="r302a"]//android.widget.EditText')
+                    
                 if edit_jml_kel.exists:
                     val_jml = edit_jml_kel.info.get('text', '').strip()
                     if val_jml == "0" or val_jml == "":
-                        print(f"[*] Jumlah keluarga default adalah '{val_jml}'. Mencoba klik Increment 1 kali...")
                         btn_inc = d(resourceId="r302a").child(description="Increment")
                         if not btn_inc.exists:
                             btn_inc = d(description="Increment")
                         if btn_inc.exists:
                             btn_inc.click()
                             time.sleep(1.0)
-                            print(f"[✓] Tombol Increment diklik. Nilai saat ini: {edit_jml_kel.info.get('text', '1')}")
-                        else:
-                            print("[⚠️] Tombol Increment tidak ditemukan, fallback ketik manual...")
-                            edit_jml_kel.set_text("1")
-                            time.sleep(1.0)
                     elif val_jml == "2":
-                        print(f"[*] Jumlah keluarga default adalah '{val_jml}'. Mencoba klik Decrement 1 kali...")
                         btn_dec = d(resourceId="r302a").child(description="Decrement")
                         if not btn_dec.exists:
                             btn_dec = d(description="Decrement")
                         if btn_dec.exists:
                             btn_dec.click()
                             time.sleep(1.0)
-                            print(f"[✓] Tombol Decrement diklik. Nilai saat ini: {edit_jml_kel.info.get('text', '1')}")
-                        else:
-                            print("[⚠️] Tombol Decrement tidak ditemukan, fallback ketik manual...")
-                            edit_jml_kel.set_text("1")
-                            time.sleep(1.0)
                     elif val_jml != "1":
-                        print(f"[*] Jumlah keluarga default adalah '{val_jml}'. Mengisi manual ke '1'...")
                         edit_jml_kel.set_text("1")
                         time.sleep(1.0)
-                        btn_blok = d(textContains="BLOK")
-                        if btn_blok.exists:
-                            btn_blok.click()
-                            time.sleep(1.0)
-                    else:
-                        print("[✓] Jumlah keluarga sudah bernilai '1'.")
                 
-                # 7. Klik tombol Berikutnya (untuk ke halaman Waktu Selesai / Submit)
-                
-                    
+                # 6. Klik tombol Berikutnya (untuk ke halaman Waktu Selesai / Submit)
                 btn_next_block = d(resourceId="fasih-form-nav-next-button")
                 if not btn_next_block.exists:
                     btn_next_block = d(textContains="BERIKUTNYA")
                 if not btn_next_block.exists:
                     btn_next_block = d(resourceId="fasih-form-nav-next-button")
-                if not btn_next_block.exists:
+                    
+                if not safe_click_robust(d, btn_next_block, "Tombol Berikutnya Blok III", max_scrolls=3, fallback_coord=(535, 1533)):
                     raise Exception("Tombol 'BERIKUTNYA BLOK III' tidak ditemukan.")
-                
-                safe_click(d, btn_next_block, "Tombol Berikutnya Blok III")
                 print("[✓] Pindah ke halaman Waktu Selesai!")
                 time.sleep(3.0)
                 
                 # 8. Pilih Jam (Waktu Selesai)
                 print("[*] Mengisi Waktu Selesai...")
-                btn_jam = None
-                if safe_exists(d, d(className="android.widget.Button", text="Ambil Waktu"), "Ambil Waktu (1)"):
+                btn_jam = d(text="Ambil Waktu")
+                if not btn_jam.exists:
                     btn_jam = d(className="android.widget.Button", text="Ambil Waktu")
-                elif safe_exists(d, d(text="Ambil Waktu"), "Ambil Waktu (2)"):
-                    btn_jam = d(text="Ambil Waktu")
-                elif safe_exists(d, d(text="Pilih Jam"), "Pilih Jam"):
+                if not btn_jam.exists:
                     btn_jam = d(text="Pilih Jam")
                     
-                if btn_jam is not None:
-                    print("[*] Melakukan klik tombol jam...")
-                    safe_click(d, btn_jam, "Tombol Jam")
-                    time.sleep(2.0)
-                else:
-                    print("[⚠️] Tombol jam tidak terdeteksi via selektor, mencoba klik koordinat (540, 1225)...")
-                    safe_click(d, (540, 1225), "Koordinat Jam")
-                    time.sleep(2.0)
+                if not safe_click_robust(d, btn_jam, "Tombol Jam Selesai", max_scrolls=3, fallback_coord=(472, 652)):
+                    print("[⚠️] Gagal klik tombol jam, fallback klik (472, 652)")
+                    d.click(472, 652)
+                time.sleep(2.0)
                 
-                # Konfirmasi jam di dialog tengah ("Ya" atau "YA"): Tunggu dialog muncul
-                print("[*] Menunggu dialog konfirmasi jam di tengah muncul...")
-                btn_confirm_time = None
-                for wait_dialog in range(5):
-                    time.sleep(1.0)
-                    if safe_exists(d, d(text="Ya"), "Cek Ya", retries=1):
-                        btn_confirm_time = d(text="Ya")
-                        break
-                    elif safe_exists(d, d(text="YA"), "Cek YA", retries=1):
-                        btn_confirm_time = d(text="YA")
-                        break
-                    elif safe_exists(d, d(text="OK"), "Cek OK", retries=1):
-                        btn_confirm_time = d(text="OK")
-                        break
-                    print(f"[!] Menunggu dialog jam (detik ke-{wait_dialog+1}/5)...")
-                    
-                if btn_confirm_time is not None:
-                    safe_click(d, btn_confirm_time, "Konfirmasi Jam")
-                    print("[✓] Waktu Selesai berhasil dikonfirmasi!")
-                    time.sleep(2.0)
-                else:
-                    print("[⚠️] Dialog konfirmasi jam tidak terdeteksi via selektor, mencoba klik koordinat (399, 670)...")
-                    safe_click(d, (399, 670), "Koordinat Konfirmasi Jam")
-                    time.sleep(2.0)
+                # Konfirmasi jam di dialog
+                btn_confirm_time = d(text="Ya")
+                if not btn_confirm_time.exists:
+                    btn_confirm_time = d(text="YA")
+                if not btn_confirm_time.exists:
+                    btn_confirm_time = d(text="OK")
+                safe_click_robust(d, btn_confirm_time, "Konfirmasi Jam", max_scrolls=0, fallback_coord=(359, 842))
+                time.sleep(2.0)
                 
                 # 9. Klik Kirim di bagian navigasi bawah
-                print("[*] Mengklik tombol 'Kirim' di bagian bawah...")
                 btn_send = d(resourceId="fasih-form-nav-submit-button")
-                if not safe_exists(d, btn_send, "Kirim Navigasi Bawah ID"):
+                if not btn_send.exists:
                     btn_send = d(text="Kirim")
-                    
-                if not safe_exists(d, btn_send, "Kirim Navigasi Bawah Teks"):
+                if not safe_click_robust(d, btn_send, "Tombol Kirim Bawah", max_scrolls=3, fallback_coord=(535, 1533)):
                     raise Exception("Tombol 'Kirim' navigasi bawah tidak ditemukan.")
-                
-                safe_click(d, btn_send, "Tombol Kirim Bawah")
                 time.sleep(2.5)
                 
-                # 10. Pop-up Info (Galat, Peringatan, Catatan, Kosong): Cek Galat & Klik "Kirim"
-                print("[*] Memeriksa apakah terdapat galat pada kuesioner...")
+                # 10. Pop-up Info (Galat): Cek Galat
                 btn_galat = d(textContains="GALAT")
-                if safe_exists(d, btn_galat, "Tombol Galat"):
+                if safe_exists(d, btn_galat, "Tombol Galat", retries=1):
                     txt_galat = btn_galat.info.get('text', '')
                     print(f"[*] Terdeteksi status galat: '{txt_galat}'")
                     if "GALAT 0" not in txt_galat:
-                        print(f"[⚠️] Ditemukan galat pada kuesioner ({txt_galat})! Membatalkan pengisian...")
                         btn_batal = d(className="android.widget.Button", text="Batal")
-                        if safe_exists(d, btn_batal, "Tombol Batal"):
-                            safe_click(d, btn_batal, "Tombol Batal")
-                            time.sleep(1.5)
-                        raise Exception(f"Kuesioner memiliki galat aktif ({txt_galat}). Membatalkan dan mengulang.")
+                        if btn_batal.exists:
+                            btn_batal.click()
+                        raise Exception(f"Kuesioner memiliki galat aktif ({txt_galat}).")
                 
-                print("[*] Mencari tombol 'Kirim' pada pop-up info pertama...")
+                # Klik Kirim pertama di dialog info
                 btn_confirm_send_1 = d.xpath('//*[@resource-id="dialog-cl-1-content"]//android.widget.Button[@text="Kirim"]')
-                if not safe_exists(d, btn_confirm_send_1, "Tombol Kirim Dialog Info XPath"):
+                if not btn_confirm_send_1.exists:
                     btn_confirm_send_1 = d(className="android.widget.Button", text="Kirim", instance=1)
-                    
-                if safe_exists(d, btn_confirm_send_1, "Tombol Kirim Dialog Info Final"):
-                    safe_click(d, btn_confirm_send_1, "Kirim Dialog Info")
-                    print("[✓] Tombol 'Kirim' pada pop-up info berhasil diklik!")
-                    time.sleep(2.5)
-                else:
-                    print("[⚠️] Tombol 'Kirim' info tidak ditemukan, mencoba fallback klik koordinat dialog (539, 1404)...")
-                    safe_click(d, (539, 1404), "Koordinat Kirim Dialog Info")
-                    time.sleep(2.5)
-                    
-                # 11. Peringatan Konfirmasi Kirim (di tengah): Klik "Konfirmasi"
-                print("[*] Mencari tombol 'Konfirmasi' di dialog konfirmasi tengah...")
+                safe_click_robust(d, btn_confirm_send_1, "Kirim Dialog Info", max_scrolls=0, fallback_coord=(539, 1404))
+                time.sleep(2.5)
+                
+                # Klik Konfirmasi di dialog tengah
                 btn_confirm_send_mid = d.xpath('//*[@resource-id="dialog-cl-1-content"]//android.widget.Button[@text="Konfirmasi"]')
-                if not safe_exists(d, btn_confirm_send_mid, "Tombol Konfirmasi Tengah XPath"):
+                if not btn_confirm_send_mid.exists:
                     btn_confirm_send_mid = d(className="android.widget.Button", text="Konfirmasi")
-                    
-                if safe_exists(d, btn_confirm_send_mid, "Tombol Konfirmasi Tengah Final"):
-                    safe_click(d, btn_confirm_send_mid, "Konfirmasi Tengah")
-                    print("[✓] Tombol 'Konfirmasi' di dialog konfirmasi tengah berhasil diklik!")
-                    time.sleep(2.5)
-                else:
-                    print("[⚠️] Tombol 'Konfirmasi' konfirmasi tengah tidak ditemukan, mencoba fallback klik koordinat (539, 1222)...")
-                    safe_click(d, (539, 1222), "Koordinat Konfirmasi Tengah")
-                    time.sleep(2.5)
-                    
-                # 12. Dialog Konfirmasi Akhir (Apakah anda yakin...): Klik "YA" / "Ya" / "IYA"
-                print("[*] Mencari tombol konfirmasi akhir 'Ya' di bottom dialog...")
+                safe_click_robust(d, btn_confirm_send_mid, "Konfirmasi Tengah", max_scrolls=0, fallback_coord=(539, 1222))
+                time.sleep(2.5)
+                
+                # Dialog Konfirmasi Akhir (Apakah anda yakin...): Klik "YA" / "Ya" / "IYA"
                 btn_confirm_send_final = d(resourceId="id.go.bpsfasih:id/rButton_bottomDialog")
-                if not safe_exists(d, btn_confirm_send_final, "YA Bottom Dialog ID"):
+                if not btn_confirm_send_final.exists:
                     btn_confirm_send_final = d(text="Ya")
-                if not safe_exists(d, btn_confirm_send_final, "YA Bottom Dialog Teks Ya"):
+                if not btn_confirm_send_final.exists:
                     btn_confirm_send_final = d(text="YA")
-                if not safe_exists(d, btn_confirm_send_final, "YA Bottom Dialog Teks IYA"):
+                if not btn_confirm_send_final.exists:
                     btn_confirm_send_final = d(text="IYA")
-                    
-                if safe_exists(d, btn_confirm_send_final, "YA Bottom Dialog Final"):
-                    safe_click(d, btn_confirm_send_final, "YA Akhir")
-                    print("[✓] Konfirmasi submit akhir berhasil diklik!")
-                else:
-                    print("[⚠️] Tombol konfirmasi akhir tidak ditemukan, mencoba fallback klik koordinat bottom (586, 1198)...")
-                    safe_click(d, (586, 1198), "Koordinat YA Akhir")
-                    
+                safe_click_robust(d, btn_confirm_send_final, "YA Akhir", max_scrolls=0, fallback_coord=(527, 1501))
+                
                 # Halaman otomatis kembali ke depan secara instan setelah submit dikonfirmasi
                 print("[*] Menunggu transisi kembali ke halaman utama (5 detik)...")
                 time.sleep(5.0)
