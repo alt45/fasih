@@ -87,10 +87,28 @@ Pilih mode yang diinginkan:
 - Ketik **`1`** untuk Penambahan Data Baru.
 - Ketik **`2`** untuk Perbaikan Data NIK.
 
-### Cara 2: Menjalankan Langsung Skrip Update NIK
-```powershell
-python update_nik.py
-```
+### Cara 2: Menjalankan Langsung Skrip Update NIK (Dukungan Multi-Device & Custom CSV)
+
+- **Mode Standar (Auto-detect):**
+  ```powershell
+  python update_nik.py
+  ```
+  *(Jika terhubung lebih dari 1 HP, script akan memunculkan menu interaktif untuk memilih perangkat).*
+
+- **Mode Multi-Device / Custom File CSV:**
+  Gunakan parameter `--device` (atau `-d`) dan `--csv` (atau `-c`):
+  ```powershell
+  python update_nik.py --device <SERIAL_HP> --csv <NAMA_FILE.csv>
+  ```
+  *Contoh menjalankan 2 HP secara bersamaan di 2 terminal terpisah:*
+  - **Terminal 1:**
+    ```powershell
+    python update_nik.py --device 068703713T108144 --csv data_hp1.csv
+    ```
+  - **Terminal 2:**
+    ```powershell
+    python update_nik.py --device RR8N60CWMLZ --csv data_hp2.csv
+    ```
 
 ---
 

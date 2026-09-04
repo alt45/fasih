@@ -1,5 +1,7 @@
+import argparse
 import csv
 import os
+import subprocess
 import sys
 import time
 
@@ -207,25 +209,77 @@ def clear_search_box(d):
         pass
 
 
-def connect_device():
-    """Menghubungkan ke perangkat Android via uiautomator2."""
+def get_connected_devices():
+    """Mengambil daftar serial perangkat Android yang terhubung via ADB."""
     try:
-        if DEVICE_ID:
-            print(f"[*] Menghubungkan ke perangkat: {DEVICE_ID}...")
-            d = u2.connect(DEVICE_ID)
+        res = subprocess.run(["adb", "devices"], capture_output=True, text=True)
+        lines = res.stdout.strip().splitlines()
+        devices = []
+        for line in lines[1:]:
+            parts = line.strip().split()
+            if len(parts) >= 2 and parts[1] == "device":
+                devices.append(parts[0])
+        return devices
+    except Exception as e:
+        print(f"[!] Gagal mengecek adb devices: {e}")
+        return []
+
+
+def connect_device(target_device=None):
+    """
+    Menghubungkan ke perangkat Android via uiautomator2.
+    Jika target_device diberikan, gunakan serial tersebut.
+    Jika tidak, cek daftar perangkat terhubung:
+      - 0 device: beri peringatan informatif
+      - 1 device: langsung hubungkan
+      - >1 device: tampilkan menu pemilihan perangkat interaktif
+    """
+    try:
+        devices = get_connected_devices()
+        chosen_serial = None
+
+        if target_device:
+            chosen_serial = target_device.strip()
+            print(f"[*] Menghubungkan ke perangkat target: {chosen_serial}...")
+            if devices and chosen_serial not in devices:
+                print(f"[⚠️] Peringatan: Serial '{chosen_serial}' tidak ditemukan dalam daftar 'adb devices' ({devices}).")
+                print("    Mencoba menghubungkan langsung via uiautomator2...")
         else:
-            print("[*] Mendeteksi perangkat Android secara otomatis...")
+            if not devices:
+                print("[!] Tidak ada perangkat yang terdeteksi di 'adb devices'.")
+                print("    Mencoba auto-connect uiautomator2...")
+            elif len(devices) == 1:
+                chosen_serial = devices[0]
+                print(f"[*] Terdeteksi 1 perangkat aktif: {chosen_serial}")
+            else:
+                print(f"\n[+] Terdeteksi {len(devices)} perangkat Android terhubung:")
+                for i, dev_id in enumerate(devices, start=1):
+                    print(f"    [{i}] Serial: {dev_id}")
+                while True:
+                    pilihan = input(f"    Pilih perangkat [1-{len(devices)}]: ").strip()
+                    if pilihan.isdigit() and 1 <= int(pilihan) <= len(devices):
+                        chosen_serial = devices[int(pilihan) - 1]
+                        break
+                    print("    [!] Pilihan tidak valid, silakan coba lagi.")
+
+        if chosen_serial:
+            d = u2.connect(chosen_serial)
+        else:
             d = u2.connect()
+
         info = d.info
-        print(f"[OK] Terhubung ke: {info.get('brand')} {info.get('model')} (Serial: {d.serial})")
-        print(f"     Resolusi: {d.window_size()}")
+        print(f"[OK] Berhasil terhubung ke: {info.get('brand', '')} {info.get('model', '')} (Serial: {d.serial})")
+        print(f"     Resolusi Layar: {d.window_size()}")
         return d
     except Exception as e:
         print(f"[X] Gagal terhubung ke Android: {e}")
+        print("    Tips penanganan:")
+        print("    1. Pastikan kabel USB terpasang baik dan HP dalam mode USB Debugging aktif.")
+        print("    2. Ketik 'adb devices' di terminal untuk memastikan serial HP terdaftar.")
         return None
 
 
-def process_update_nik(d, row_data):
+def process_update_nik(d, row_data, csv_input_path=CSV_INPUT):
     """
     Memproses satu baris data IDPEL:
     Cari IDPEL -> Buka -> BLOK I Cek IDPEL -> BLOK II Ganti NIK & Cek NIK -> Kirim
@@ -269,7 +323,7 @@ def process_update_nik(d, row_data):
             "NIK_Perbaikan": nik_baru,
             "keterangan": "Tidak ditemukan di tabel assignment"
         })
-        remove_idpel_from_input_csv(CSV_INPUT, idpel)
+        remove_idpel_from_input_csv(csv_input_path, idpel)
         clear_search_box(d)
         return "IDPEL_NOT_FOUND"
 
@@ -422,14 +476,14 @@ def process_update_nik(d, row_data):
     # Jika NIK TIDAK DITEMUKAN saat pemadanan:
     if nik_match_result == "TIDAK DITEMUKAN":
         print(f"[!] Pemadanan Gagal: NIK {nik_baru} untuk IDPEL {idpel} TIDAK DITEMUKAN.")
-        print(f"[*] Mencatat ke '{OUT_NIK_TIDAK_DITEMUKAN}' dan menghapus dari '{CSV_INPUT}'...")
+        print(f"[*] Mencatat ke '{OUT_NIK_TIDAK_DITEMUKAN}' dan menghapus dari '{csv_input_path}'...")
         append_to_log(OUT_NIK_TIDAK_DITEMUKAN, {
             "id_pelanggan": idpel,
             "NIK_Perbaikan": nik_baru,
             "keterangan": "NIK Tidak Ditemukan saat pemadanan",
             "waktu": time.strftime("%Y-%m-%d %H:%M:%S")
         })
-        remove_idpel_from_input_csv(CSV_INPUT, idpel)
+        remove_idpel_from_input_csv(csv_input_path, idpel)
         print("[*] Membatalkan pengisian form dan kembali ke halaman Daftar Assignment...")
         back_to_assignment_list(d)
         clear_search_box(d)
@@ -592,26 +646,49 @@ def process_update_nik(d, row_data):
     })
     
     # Hapus dari CSV input
-    remove_idpel_from_input_csv(CSV_INPUT, idpel)
+    remove_idpel_from_input_csv(csv_input_path, idpel)
     clear_search_box(d)
     return "SUKSES"
 
 
-def main():
+def main(custom_device=None, custom_csv=None):
+    # Parsing CLI arguments jika dipanggil dari terminal
+    parser = argparse.ArgumentParser(
+        description="Otomasi Perbaikan Data NIK - Fasih BPS",
+        formatter_class=argparse.RawTextHelpFormatter
+    )
+    parser.add_argument("--device", "-d", type=str, default="", help="Serial ID perangkat Android (lihat via 'adb devices')")
+    parser.add_argument("--csv", "-c", type=str, default=CSV_INPUT, help="Nama/path file CSV data perbaikan NIK (default: ahzacahyo.csv)")
+    
+    if custom_device is not None or custom_csv is not None:
+        target_device = custom_device or ""
+        target_csv = custom_csv or CSV_INPUT
+    else:
+        args, _ = parser.parse_known_args()
+        target_device = args.device or DEVICE_ID
+        target_csv = args.csv or CSV_INPUT
+
     print("╔══════════════════════════════════════════════════════════╗")
     print("║      OTOMASI PERBAIKAN DATA NIK - FASIH BPS             ║")
     print("╠══════════════════════════════════════════════════════════╣")
-    print(f"║  File Target : {CSV_INPUT:<41} ║")
+    print(f"║  File Target : {target_csv:<41} ║")
+    if target_device:
+        print(f"║  Device ID   : {target_device:<41} ║")
     print("╚══════════════════════════════════════════════════════════╝\n")
 
     # 1. Load Data CSV
-    data_list = load_input_data(CSV_INPUT)
+    if not os.path.exists(target_csv):
+        print(f"[X] File CSV '{target_csv}' TIDAK DITEMUKAN!")
+        print(f"    Pastikan file '{target_csv}' sudah berada di folder proyek.")
+        return
+
+    data_list = load_input_data(target_csv)
     if not data_list:
-        print("[!] Tidak ada data untuk diproses. Program selesai.")
+        print(f"[!] Tidak ada data untuk diproses di '{target_csv}'. Program selesai.")
         return
 
     # 2. Hubungkan ke Perangkat Android
-    d = connect_device()
+    d = connect_device(target_device)
     if not d:
         return
 
@@ -635,7 +712,7 @@ def main():
         print(f"\n>>> Progress: [{idx}/{total_data}] IDPEL: {idpel} <<<")
 
         try:
-            status_hasil = process_update_nik(d, item)
+            status_hasil = process_update_nik(d, item, target_csv)
             if status_hasil == "SUKSES":
                 sukses_count += 1
             elif status_hasil == "IDPEL_NOT_FOUND":
