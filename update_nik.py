@@ -468,10 +468,10 @@ def connect_device(target_device=None):
         return None
 
 
-def process_update_nik(d, row_data, csv_input_path=CSV_INPUT):
+def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=False):
     """
     Memproses satu baris data IDPEL:
-    Cari IDPEL -> Buka -> BLOK I Cek IDPEL -> BLOK II Ganti NIK & Cek NIK -> Kirim
+    Cari IDPEL -> Buka -> BLOK I (Cek IDPEL jika Prabayar / Skip jika Pasca) -> BLOK II Ganti NIK & Cek NIK -> Kirim
     """
     idpel = str(row_data["id_pelanggan"]).strip()
     nik_baru = str(row_data["NIK_Perbaikan"]).strip()
@@ -610,61 +610,65 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT):
             break
         time.sleep(0.3)
 
-    # Pastikan posisi tombol 'Cek ID Pelanggan' tidak terhimpit di batas bawah layar.
-    # Secara default di BLOK I tombol berada di y > 1400 mepet navigation bar.
-    # Selalu geser layar 1 kali jika posisi tombol mepet bawah (y > 1300) atau belum terlihat.
-    btn_cek_idpel = d(text="Cek ID Pelanggan")
-    need_scroll = True
-    if btn_cek_idpel.exists:
+    if not skip_cek_idpel:
+        # Pastikan posisi tombol 'Cek ID Pelanggan' tidak terhimpit di batas bawah layar.
+        # Secara default di BLOK I tombol berada di y > 1400 mepet navigation bar.
+        # Selalu geser layar 1 kali jika posisi tombol mepet bawah (y > 1300) atau belum terlihat.
+        btn_cek_idpel = d(text="Cek ID Pelanggan")
+        need_scroll = True
+        if btn_cek_idpel.exists:
+            try:
+                info = btn_cek_idpel.info
+                bounds = info.get("bounds", {})
+                top_y = bounds.get("top", 0)
+                bottom_y = bounds.get("bottom", 1600)
+                if 250 <= top_y and bottom_y <= 1300:
+                    need_scroll = False
+            except Exception:
+                pass
+
+        if need_scroll:
+            print("[*] BLOK I: Menggeser layar sedikit agar tombol 'Cek ID Pelanggan' terangkat ke area nyaman...")
+            scroll_down_small(d, duration=0.35)
+            time.sleep(0.6)
+            btn_cek_idpel = d(text="Cek ID Pelanggan")
+
+        if not btn_cek_idpel.exists:
+            # Coba scroll 1 kali lagi jika belum terlihat
+            scroll_down_small(d, duration=0.35)
+            time.sleep(0.6)
+            btn_cek_idpel = d(text="Cek ID Pelanggan")
+
+        if not btn_cek_idpel or not btn_cek_idpel.exists:
+            raise Exception("Gagal masuk ke BLOK I / Tombol 'Cek ID Pelanggan' tidak ditemukan.")
+
+        # Ambil koordinat fisik tombol untuk sentuhan langsung (menjamin event onclick WebView terpemicu)
         try:
-            info = btn_cek_idpel.info
-            bounds = info.get("bounds", {})
-            top_y = bounds.get("top", 0)
-            bottom_y = bounds.get("bottom", 1600)
-            if 250 <= top_y and bottom_y <= 1300:
-                need_scroll = False
-        except Exception:
-            pass
-
-    if need_scroll:
-        print("[*] BLOK I: Menggeser layar sedikit agar tombol 'Cek ID Pelanggan' terangkat ke area nyaman...")
-        scroll_down_small(d, duration=0.35)
-        time.sleep(0.6)
-        btn_cek_idpel = d(text="Cek ID Pelanggan")
-
-    if not btn_cek_idpel.exists:
-        # Coba scroll 1 kali lagi jika belum terlihat
-        scroll_down_small(d, duration=0.35)
-        time.sleep(0.6)
-        btn_cek_idpel = d(text="Cek ID Pelanggan")
-
-    if not btn_cek_idpel or not btn_cek_idpel.exists:
-        raise Exception("Gagal masuk ke BLOK I / Tombol 'Cek ID Pelanggan' tidak ditemukan.")
-
-    # Ambil koordinat fisik tombol untuk sentuhan langsung (menjamin event onclick WebView terpemicu)
-    try:
-        cx, cy = btn_cek_idpel.center()
-        print(f"[*] BLOK I: Mengklik fisik 'Cek ID Pelanggan' di ({cx}, {cy})...")
-        d.click(cx, cy)
-        time.sleep(0.5)
-        # Penegasan sentuhan kedua jika belum memicu respon
-        if not (d(textContains="Hasil pengecekan").exists or d(textContains="STATUS").exists or d(resourceId="id.go.bpsfasih:id/card_progress").exists):
+            cx, cy = btn_cek_idpel.center()
+            print(f"[*] BLOK I: Mengklik fisik 'Cek ID Pelanggan' di ({cx}, {cy})...")
             d.click(cx, cy)
-    except Exception as e:
-        print(f"[!] Gagal klik fisik ({e}), fallback klik logis...")
-        btn_cek_idpel.click()
-    
-    # Tunggu respon verifikasi ID Pelanggan dari server (card_progress atau teks hasil pengecekan)
-    print("[*] Menunggu respon Cek ID Pelanggan...")
-    for _ in range(25):
-        time.sleep(0.3)
-        if d(textContains="Hasil pengecekan").exists or d(textContains="STATUS").exists:
-            print("[OK] Hasil pengecekan ID Pelanggan berhasil terverifikasi!")
-            break
-        if not d(resourceId="id.go.bpsfasih:id/card_progress").exists:
-            pass
-    hide_keyboard(d)
-    time.sleep(0.5)
+            time.sleep(0.5)
+            # Penegasan sentuhan kedua jika belum memicu respon
+            if not (d(textContains="Hasil pengecekan").exists or d(textContains="STATUS").exists or d(resourceId="id.go.bpsfasih:id/card_progress").exists):
+                d.click(cx, cy)
+        except Exception as e:
+            print(f"[!] Gagal klik fisik ({e}), fallback klik logis...")
+            btn_cek_idpel.click()
+        
+        # Tunggu respon verifikasi ID Pelanggan dari server (card_progress atau teks hasil pengecekan)
+        print("[*] Menunggu respon Cek ID Pelanggan...")
+        for _ in range(25):
+            time.sleep(0.3)
+            if d(textContains="Hasil pengecekan").exists or d(textContains="STATUS").exists:
+                print("[OK] Hasil pengecekan ID Pelanggan berhasil terverifikasi!")
+                break
+            if not d(resourceId="id.go.bpsfasih:id/card_progress").exists:
+                pass
+        hide_keyboard(d)
+        time.sleep(0.5)
+    else:
+        print("[*] BLOK I (Pasca Bayar): Melewati 'Cek ID Pelanggan' sesuai konfigurasi...")
+        time.sleep(0.5)
 
     # 9. Klik 'BERIKUTNYA BLOK II' (Hanya klik 1x -> Cek kata NIK di layar -> Jika belum ada, klik lagi)
     print("[*] Berpindah ke BLOK II...")
@@ -1099,28 +1103,38 @@ def scan_all_meters_from_hp(d):
     return collected_meters
 
 
-def run_reverse_mode(target_device=None, custom_csv=None):
+def run_reverse_mode(target_device=None, custom_csv=None, is_pasca=False):
     """
-    Mode 3: PENGEDITAN DATA TERBALIK (REVERSE)
+    Mode 3 / 4: PENGEDITAN DATA TERBALIK (REVERSE)
     1. Memindai seluruh nomor meter dari HP.
-    2. Mencocokkan nomor meter dengan file master (mastermeter.csv atau master.csv).
-    3. Mengeksekusi pembaruan NIK hanya untuk data yang cocok.
+    2. Mencocokkan nomor meter dengan file master (masterpasca.csv atau mastermeter.csv).
+    3. Mengeksekusi pembaruan NIK hanya untuk data yang cocok (BLOK I dilewati jika pasca).
     """
     target_csv = custom_csv or ""
     if not target_csv:
-        if os.path.exists("mastermeter.csv"):
-            print("[*] File 'mastermeter.csv' terdeteksi otomatis sebagai file master.")
-            target_csv = "mastermeter.csv"
-        elif os.path.exists("master.csv"):
-            print("[*] File 'master.csv' terdeteksi otomatis sebagai file master.")
-            target_csv = "master.csv"
+        if is_pasca:
+            if os.path.exists("masterpasca.csv"):
+                print("[*] File 'masterpasca.csv' terdeteksi otomatis sebagai file master pasca bayar.")
+                target_csv = "masterpasca.csv"
+            else:
+                target_csv = pilih_file_csv(judul_mode="Pengeditan NIK Pasca Bayar (Master CSV)")
+                if not target_csv:
+                    return
         else:
-            target_csv = pilih_file_csv(judul_mode="Pengeditan NIK Terbalik (Master CSV)")
-            if not target_csv:
-                return
+            if os.path.exists("mastermeter.csv"):
+                print("[*] File 'mastermeter.csv' terdeteksi otomatis sebagai file master.")
+                target_csv = "mastermeter.csv"
+            elif os.path.exists("master.csv"):
+                print("[*] File 'master.csv' terdeteksi otomatis sebagai file master.")
+                target_csv = "master.csv"
+            else:
+                target_csv = pilih_file_csv(judul_mode="Pengeditan NIK Terbalik (Master CSV)")
+                if not target_csv:
+                    return
 
+    judul_banner = "OTOMASI PENGEDITAN NIK PASCA BAYAR (REVERSE MODE)" if is_pasca else "OTOMASI PENGEDITAN NIK TERBALIK (REVERSE MODE)"
     print("╔══════════════════════════════════════════════════════════╗")
-    print("║   OTOMASI PENGEDITAN NIK TERBALIK (REVERSE MODE)         ║")
+    print(f"║   {judul_banner:<54} ║")
     print("╠══════════════════════════════════════════════════════════╣")
     print(f"║  File Master : {target_csv:<41} ║")
     if target_device:
@@ -1206,7 +1220,7 @@ def run_reverse_mode(target_device=None, custom_csv=None):
         print(f"\n>>> Progress Reverse: [{idx}/{total_cocok}] IDPEL: {idpel}{meter_info} <<<")
 
         try:
-            status_hasil = process_update_nik(d, item, target_csv)
+            status_hasil = process_update_nik(d, item, target_csv, skip_cek_idpel=is_pasca)
             if status_hasil == "SUKSES":
                 sukses_count += 1
             elif status_hasil == "IDPEL_NOT_FOUND":
@@ -1247,7 +1261,7 @@ def main(custom_device=None, custom_csv=None, mode="forward"):
     )
     parser.add_argument("--device", "-d", type=str, default="", help="Serial ID perangkat Android (lihat via 'adb devices')")
     parser.add_argument("--csv", "-c", type=str, default="", help="Nama/path file CSV data perbaikan NIK")
-    parser.add_argument("--mode", "-m", type=str, default="forward", help="Pilih mode: 'forward' (atau '2') / 'reverse' (atau '3')")
+    parser.add_argument("--mode", "-m", type=str, default="forward", help="Pilih mode: 'forward' ('2') / 'reverse' ('3') / 'pasca' ('4')")
     
     args, _ = parser.parse_known_args()
     target_device = custom_device or args.device or DEVICE_ID
@@ -1255,7 +1269,10 @@ def main(custom_device=None, custom_csv=None, mode="forward"):
     selected_mode = mode or args.mode or "forward"
 
     if selected_mode.lower() in ["reverse", "3", "terbalik", "rev"]:
-        run_reverse_mode(target_device=target_device, custom_csv=target_csv)
+        run_reverse_mode(target_device=target_device, custom_csv=target_csv, is_pasca=False)
+        return
+    elif selected_mode.lower() in ["pasca", "4", "pascabayar", "reverse_pasca"]:
+        run_reverse_mode(target_device=target_device, custom_csv=target_csv, is_pasca=True)
         return
 
     # Jika file CSV belum ditentukan, minta pengguna memilih secara interaktif
