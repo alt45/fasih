@@ -1,15 +1,30 @@
-# Otomasi Kuesioner Fasih BPS (Android Automation)
+# Otomasi Kuesioner & Perbaikan Data Fasih BPS (Android Automation)
 
-Aplikasi otomasi berbasis Python untuk melakukan pengisian kuesioner tugas pencacahan pada aplikasi **Fasih BPS** (`id.go.bpsfasih`) di perangkat Android secara otomatis menggunakan data dari file CSV.
+Aplikasi otomasi berbasis Python untuk melakukan pengisian kuesioner tugas pencacahan serta **perbaikan/pembaruan data NIK** pada aplikasi **Fasih BPS** (`id.go.bpsfasih`) di perangkat Android secara otomatis menggunakan data dari file CSV.
+
+---
 
 ## Fitur Utama
 
-- **Otomasi Alur Pengisian Penuh:** Mulai dari pencarian ID Pelanggan, validasi status data, pengambilan lokasi GPS, unggah foto, pengisian Blok II (Nama, NIK, HP, status rumah), Blok III (Provinsi, Kabupaten, Kecamatan, Desa/Kelurahan, Alamat, Jumlah Keluarga), hingga Blok IV (Jam Selesai & Kirim).
-- **Auto-Recovery & Loop Pengulangan:** Jika terjadi kendala koneksi atau elemen UI lambat termuat, aplikasi otomatis membatalkan form secara bersih, kembali ke halaman utama, dan mengulang pengisian untuk data yang sama agar tidak ada data yang terlewat.
-- **Pembersihan Nama Pintar:** Mengamankan nama penghuni agar hanya berisi huruf dan spasi (menghapus tanda baca, angka, dan simbol secara otomatis sesuai aturan validasi aplikasi).
-- **Dukungan Foto Galeri Acak:** Mengambil foto secara acak dari 6 foto teratas di galeri Anda untuk menghindari pengiriman berkas gambar yang identik.
-- **Log Pelacakan Sukses:** Menyalin data yang sukses terkirim ke berkas `BERHASIL_KIRIM.csv` dan secara otomatis menghapusnya dari file sumber (`HENGKI.csv`).
-- **Mekanisme Ketahanan Tinggi:** Dilengkapi fitur *Auto-Retry* per-langkah interaksi untuk mengantisipasi keterlambatan server BPS atau fluktuasi RPC Android.
+Aplikasi ini memiliki 2 mode operasi utama yang dapat dipilih melalui menu interaktif:
+
+### 1. Penambahan Data Baru (`main.py`)
+- **Alur Penuh Tambah Assignment:** Pengisian kuesioner dari awal untuk ID Pelanggan yang belum tercatat (pengambilan GPS, foto galeri acak, pengisian Blok II, Blok III, hingga Blok IV Jam Selesai & Kirim).
+- **Pembersihan Nama Pintar:** Sanitasi karakter khusus dan tanda baca agar sesuai aturan validasi aplikasi.
+- **Log Pelacakan:** Data sukses dicatat ke `BERHASIL_KIRIM.csv` dan otomatis dihapus dari file sumber (`HENGKI.csv`).
+
+### 2. Perbaikan / Update Data NIK (`update_nik.py`)
+- **Pencarian Assignment Cepat:** Menginput ID Pelanggan di kolom *Search* pada tabel penugasan.
+- **Penanganan IDPEL Tidak Ditemukan:** Jika ID Pelanggan tidak ada di penugasan, otomatis dicatat ke `IDPEL_TIDAK_DITEMUKAN.csv`, dihapus dari daftar CSV input, kolom pencarian dibersihkan, dan langsung beralih ke ID berikutnya tanpa macet.
+- **Validasi BLOK I:** Menggulir layar, klik **Cek ID Pelanggan**, lalu navigasi ke BLOK II.
+- **Pembaruan NIK Cepat & Presisi di BLOK II:** Menghapus NIK lama, mengetik NIK perbaikan secara instan, dan memicu penekanan tombol fisik **Cek NIK**.
+- **Pengecekan Pemadanan Server:**
+  - Jika hasil pemadanan NIK **`TIDAK DITEMUKAN`**: otomatis dicatat ke `NIK_TIDAK_DITEMUKAN.csv`, dihapus dari CSV input, form dibatalkan secara bersih (menekan tombol kembali & konfirmasi `IYA`), dan lanjut ke baris berikutnya.
+  - Jika hasil pemadanan **`SESUAI / DITEMUKAN`**: melanjutkan proses penyimpanan.
+- **Pengecekan Galat Otomatis:** Memeriksa status galat aktif (harus `GALAT 0`) sebelum konfirmasi pengiriman.
+- **Deteksi Layar Akhir Adaptif:**
+  - **Jika Masuk ke `Halaman Upload`:** Otomatis mendeteksi status `PENDING SUBMIT`, mengklik **`Cek Status`**, menunggu hingga status antrian berubah menjadi **`SUCCESS SUBMIT`**, lalu menekan tombol **Kembali (Back)** menuju Daftar Assignment.
+  - **Jika Langsung Kembali ke `Daftar Assignment`:** Otomatis mendeteksi halaman depan tanpa waktu tunggu yang sia-sia, membersihkan kotak pencarian, mencatat hasil ke `SUKSES_UPDATE_NIK.csv`, dan melanjutkan ke baris berikutnya.
 
 ---
 
@@ -18,75 +33,86 @@ Aplikasi otomasi berbasis Python untuk melakukan pengisian kuesioner tugas penca
 1. **Komputer/Laptop:** OS Windows dengan Python 3.8 ke atas terinstal.
 2. **Perangkat HP Android:**
    - Fitur **USB Debugging** aktif (di Opsi Pengembang).
-   - HP terhubung ke komputer menggunakan kabel USB berkualitas baik.
-   - GPS HP dalam kondisi aktif.
-3. **Konfigurasi Mock Location (Opsional):**
-   - Jika ingin memalsukan lokasi, daftarkan aplikasi pembantu (seperti **ATX** atau **Appium Settings**) sebagai aplikasi lokasi palsu di Opsi Pengembang HP Anda.
+   - HP terhubung ke komputer via kabel data USB.
+   - Layar HP menyala dan aplikasi Fasih BPS terinstal.
 
 ---
 
 ## Langkah Instalasi & Persiapan
 
-Ikuti langkah berikut di terminal komputer Anda (PowerShell/CMD) di dalam direktori folder `fasih`:
+Jalankan perintah berikut di terminal (PowerShell atau CMD) di folder proyek:
 
-### 1. Membuat Virtual Environment (Rekomendasi)
-```powershell
-python -m venv venv
-```
-
-### 2. Mengaktifkan Virtual Environment
-* **Di Windows PowerShell:**
+### 1. Mengaktifkan Virtual Environment
+* **Windows PowerShell:**
   ```powershell
   .\venv\Scripts\Activate.ps1
   ```
-* **Di Windows CMD:**
+* **Windows CMD:**
   ```cmd
   .\venv\Scripts\activate.bat
   ```
 
-### 3. Menginstal Dependensi Pihak Ketiga
+### 2. Menginstal Dependensi
 ```powershell
 pip install -r requirements.txt
 ```
 
 ---
 
-## Penyiapan Data CSV
+## Format Data CSV
 
-Siapkan file data target bernama **`HENGKI.csv`** di dalam folder yang sama dengan `main.py`.
-- **Separator:** Menggunakan titik koma (`;`).
-- **Kolom Utama Wajib:** 
-  - `IDPEL` (ID Pelanggan)
-  - `NAMA` (Nama Pelanggan)
-  - `NOIDENTITAS` (NIK Pelanggan)
-  - `KECAMATAN`
-  - `KELURAHAN_DESA` / `KELURAHAN`
-  - `ALAMAT`
+### A. Untuk Mode Tambah Baru (`HENGKI.csv`)
+- **Separator:** Titik koma (`;`)
+- **Kolom Utama:** `IDPEL`, `NAMA`, `NOIDENTITAS`, `KECAMATAN`, `KELURAHAN_DESA`, `ALAMAT`
+
+### B. Untuk Mode Update NIK (`ahzacahyo.csv`)
+- **Separator:** Titik koma (`;`)
+- **Format Header:**
+  ```csv
+  id_pelanggan;NIK Perbaikan
+  521550683355;3308180507950006
+  521551931787;3308201010770006
+  ```
 
 ---
 
 ## Cara Menjalankan
 
-1. Hubungkan HP Android ke komputer via USB dan pastikan perangkat dikenali dengan mengetik perintah:
-   ```bash
-   adb devices
-   ```
-2. Pastikan serial device pada baris berikut di berkas `main.py` sudah disesuaikan dengan serial HP Anda:
-   ```python
-   device_id = "RR8N60CWMLZ" # Ganti dengan serial HP Anda
-   ```
-3. Posisikan layar HP Anda pada halaman depan **Daftar Assignment** di aplikasi Fasih BPS.
-4. Jalankan aplikasi otomasi:
-   ```powershell
-   python main.py
-   ```
+### Cara 1: Melalui Menu Interaktif Utama
+Posisikan layar HP pada halaman depan **Daftar Assignment** di aplikasi Fasih BPS, lalu jalankan:
+```powershell
+python main.py
+```
+Pilih mode yang diinginkan:
+- Ketik **`1`** untuk Penambahan Data Baru.
+- Ketik **`2`** untuk Perbaikan Data NIK.
+
+### Cara 2: Menjalankan Langsung Skrip Update NIK
+```powershell
+python update_nik.py
+```
+
+---
+
+## File Log & Output Otomatis
+
+| Nama File | Keterangan |
+| :--- | :--- |
+| `SUKSES_UPDATE_NIK.csv` | Catatan ID Pelanggan dan NIK yang berhasil diperbarui dan disubmit. |
+| `IDPEL_TIDAK_DITEMUKAN.csv` | Catatan ID Pelanggan yang tidak ada dalam daftar penugasan. |
+| `NIK_TIDAK_DITEMUKAN.csv` | Catatan NIK yang gagal dipadankan di server BPS (status *TIDAK DITEMUKAN*). |
+| `NIK_GAGAL_UPDATE.csv` | Catatan error teknis / form galat selama proses perbaikan. |
+| `BERHASIL_KIRIM.csv` | Catatan data yang sukses disubmit pada mode penambahan kuesioner baru. |
 
 ---
 
 ## Struktur Repositori
 
-- `main.py` - Berkas utama kode program otomasi.
-- `requirements.txt` - Daftar dependensi pustaka Python.
-- `HENGKI.csv` - File data pelanggan yang akan diproses.
-- `BERHASIL_KIRIM.csv` - Berkas log output data pelanggan yang sukses disubmit.
-- `.gitignore` - Mengabaikan berkas sampah python dan file lokal agar tidak masuk repositori git.
+```text
+├── main.py                    # Berkas utama peluncur & menu otomasi
+├── update_nik.py              # Modul otomasi perbaikan / update NIK
+├── analisa_ui.py              # Utilitas inspeksi & dump UI Android
+├── requirements.txt           # Daftar dependensi library Python
+├── README.md                  # Dokumentasi panduan penggunaan
+└── .gitignore                 # Konfigurasi pengabaian file sampah & log
+```
