@@ -596,31 +596,31 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT):
         btn_ya_buka.click()
     
     print("[*] Menunggu loading kuesioner selesai (card_progress)...")
-    for _ in range(20):
+    for _ in range(30):
         if d(resourceId="id.go.bpsfasih:id/card_progress").exists:
-            time.sleep(1.0)
+            time.sleep(0.3)
         else:
             break
-    time.sleep(2.0)
+    time.sleep(0.5)
 
-    # 8. BLOK I: Verifikasi halaman terbuka, Geser layar ke atas, & Klik 'Cek ID Pelanggan'
+    # 8. BLOK I: Verifikasi halaman terbuka, Geser layar cepat, & Klik 'Cek ID Pelanggan'
     print("[*] Menunggu halaman BLOK I termuat...")
-    for _ in range(12):
+    for _ in range(20):
         if d(text="Cek ID Pelanggan").exists or d(text="BERIKUTNYA BLOK II").exists or d(textContains="ID pelanggan").exists or d(textContains="BLOK I").exists:
             break
-        time.sleep(1.0)
+        time.sleep(0.3)
 
-    # Geser layar ke atas agar tombol Cek ID Pelanggan di bawah terlihat
-    print("[*] BLOK I: Menggeser layar ke atas agar tombol 'Cek ID Pelanggan' terlihat...")
-    swipe_up_to_reveal(d)
-    time.sleep(1.5)
-
+    # Cek apakah tombol Cek ID Pelanggan sudah ada di layar, jika belum geser cepat ke atas
     btn_cek_idpel = d(text="Cek ID Pelanggan")
     if not btn_cek_idpel.exists:
-        print("[*] Belum terlihat, mencoba geser layar sekali lagi...")
-        swipe_up_to_reveal(d)
-        time.sleep(1.5)
+        print("[*] BLOK I: Menggeser layar cepat agar tombol 'Cek ID Pelanggan' terlihat...")
+        swipe_up_to_reveal(d, duration=0.2)
+        time.sleep(0.4)
         btn_cek_idpel = d(text="Cek ID Pelanggan")
+        if not btn_cek_idpel.exists:
+            swipe_up_to_reveal(d, duration=0.2)
+            time.sleep(0.4)
+            btn_cek_idpel = d(text="Cek ID Pelanggan")
 
     if not btn_cek_idpel.exists:
         raise Exception("Gagal masuk ke BLOK I / Tombol 'Cek ID Pelanggan' tidak ditemukan.")
@@ -630,12 +630,12 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT):
     
     # Tunggu respon verifikasi ID Pelanggan dari server (card_progress)
     print("[*] Menunggu respon Cek ID Pelanggan...")
-    for _ in range(15):
-        time.sleep(1.0)
+    for _ in range(25):
+        time.sleep(0.3)
         if not d(resourceId="id.go.bpsfasih:id/card_progress").exists:
             break
     hide_keyboard(d)
-    time.sleep(1.0)
+    time.sleep(0.4)
 
     # 9. Klik 'BERIKUTNYA BLOK II' (Hanya klik 1x -> Cek kata NIK di layar -> Jika belum ada, klik lagi)
     print("[*] Berpindah ke BLOK II...")
