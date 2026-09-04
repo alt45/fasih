@@ -1033,17 +1033,16 @@ def scroll_table_down(d):
     time.sleep(0.3)
 
 
-def scan_all_meters_from_hp(d):
+def scan_all_assignments_from_hp(d, scan_by="auto"):
     """
-    Memindai seluruh nomor meter yang ada di tabel assignment HP.
-    1. Memastikan opsi 'Show 100 entries' aktif agar seluruh data tampil tanpa pagination.
-    2. Menggulir ke baris 1 paling atas.
-    3. Menggulir bertahap ke bawah dan mengekstrak nomor meter (11 digit).
-    4. Berhenti ketika tidak ada nomor meter baru setelah 3 kali scroll berturut-turut.
-    5. Mengembalikan daftar nomor meter unik.
+    Memindai seluruh penugasan (Nomor Meter 11 digit atau ID Pelanggan 12 digit) dari tabel assignment HP.
+    scan_by:
+        'meter' -> cari nomor meter (11 digit)
+        'idpel' -> cari ID Pelanggan (12 digit)
+        'auto'  -> deteksi otomatis dari kolom tabel
     """
     import re
-    print("[*] Menyiapkan pemindaian nomor meter di aplikasi Fasih...")
+    print(f"[*] Menyiapkan pemindaian daftar assignment di aplikasi Fasih (mode scan: {scan_by.upper()})...")
     if not (d(text="Daftar Assignment").exists or d(text="Search:").exists):
         if not back_to_assignment_list(d):
             raise Exception("Gagal memposisikan layar ke 'Daftar Assignment'.")
@@ -1063,27 +1062,43 @@ def scan_all_meters_from_hp(d):
             time.sleep(1.5)
             print("[✓] Tampilan berhasil diubah menjadi 100 entries.")
 
+    # Deteksi tipe kolom jika 'auto'
+    detected_type = scan_by
+    if detected_type == "auto":
+        if d(text="ID Pelanggan").exists and not d(text="No. Meter").exists:
+            detected_type = "idpel"
+        else:
+            detected_type = "meter"
+        print(f"[*] Terdeteksi tipe kolom tabel di layar: '{detected_type.upper()}'")
+
     # 2. Gulir ke baris paling awal
     print("[*] Menggulir tabel ke posisi paling awal...")
     scroll_table_up(d, swipes=15)
 
-    collected_meters = []
-    print("[*] Memulai pemindaian dari baris 1 sampai tuntas...")
+    collected = []
+    unit_label = "ID Pelanggan" if detected_type == "idpel" else "Nomor Meter"
+    print(f"[*] Memulai pemindaian {unit_label} dari baris 1 sampai tuntas...")
 
     consecutive_no_new = 0
     for step in range(35):
         xml = d.dump_hierarchy()
-        found = re.findall(r'\b\d{11}\b', xml)
+        if detected_type == "idpel":
+            found_plus = re.findall(r'\+\s*(\d{12})', xml)
+            found_all = [x for x in re.findall(r'\b\d{12}\b', xml) if not x.startswith("0000")]
+            found = found_plus if found_plus else found_all
+        else:
+            found = re.findall(r'\b\d{11}\b', xml)
+
         new_in_step = 0
-        for m in found:
-            if m not in collected_meters:
-                collected_meters.append(m)
+        for item in found:
+            if item not in collected:
+                collected.append(item)
                 new_in_step += 1
 
         m_footer = re.search(r'Showing\s+(\d+)\s+to\s+(\d+)\s+of\s+(\d+)\s+entries', xml)
         footer_text = m_footer.group(0) if m_footer else "-"
 
-        print(f"    [Pindai Step {step+1:2d}] +{new_in_step:2d} meter baru (Total: {len(collected_meters):2d}) | {footer_text}")
+        print(f"    [Pindai Step {step+1:2d}] +{new_in_step:2d} {unit_label} baru (Total: {len(collected):2d}) | {footer_text}")
 
         if new_in_step == 0:
             consecutive_no_new += 1
@@ -1099,15 +1114,20 @@ def scan_all_meters_from_hp(d):
     print("[*] Mengembalikan posisi tabel ke baris paling atas...")
     scroll_table_up(d, swipes=15)
 
-    print(f"[✓] Berhasil mengumpulkan {len(collected_meters)} nomor meter unik dari HP.")
-    return collected_meters
+    print(f"[✓] Berhasil mengumpulkan {len(collected)} {unit_label} unik dari HP.")
+    return collected
+
+
+def scan_all_meters_from_hp(d, scan_by="auto"):
+    """Fungsi pembungkus agar kompatibel dengan kode sebelumnya."""
+    return scan_all_assignments_from_hp(d, scan_by=scan_by)
 
 
 def run_reverse_mode(target_device=None, custom_csv=None, is_pasca=False):
     """
     Mode 3 / 4: PENGEDITAN DATA TERBALIK (REVERSE)
-    1. Memindai seluruh nomor meter dari HP.
-    2. Mencocokkan nomor meter dengan file master (masterpasca.csv atau mastermeter.csv).
+    1. Memindai seluruh nomor meter (Mode 3) atau ID Pelanggan (Mode 4 Pasca) dari HP.
+    2. Mencocokkan dengan file master (masterpasca.csv atau mastermeter.csv).
     3. Mengeksekusi pembaruan NIK hanya untuk data yang cocok (BLOK I dilewati jika pasca).
     """
     target_csv = custom_csv or ""
@@ -1152,14 +1172,16 @@ def run_reverse_mode(target_device=None, custom_csv=None, is_pasca=False):
     master_by_meter = {}
     master_by_idpel = {}
     for r in raw_data:
-        idp = r["id_pelanggan"]
-        nik = r["NIK_Perbaikan"]
+        idp = str(r["id_pelanggan"]).strip()
+        nik = str(r["NIK_Perbaikan"]).strip()
         master_by_idpel[idp] = r
         if "no_meter" in r and r["no_meter"]:
-            master_by_meter[r["no_meter"]] = r
+            master_by_meter[str(r["no_meter"]).strip()] = r
 
     print(f"[OK] Berhasil memuat {len(raw_data)} data master.")
-    if has_meter_col:
+    if is_pasca:
+        print(f"     Terdeteksi {len(master_by_idpel)} data ID Pelanggan unik di master pasca.")
+    elif has_meter_col:
         print(f"     Terdeteksi {len(master_by_meter)} data nomor meter unik.")
 
     # 2. Hubungkan ke Perangkat Android
@@ -1173,22 +1195,33 @@ def run_reverse_mode(target_device=None, custom_csv=None, is_pasca=False):
     time.sleep(2.0)
 
     # 3. Pindai seluruh data dari HP
-    hp_meters = scan_all_meters_from_hp(d)
-    if not hp_meters:
-        print("[!] Tidak ada nomor meter yang berhasil discan dari HP. Program berhenti.")
+    scan_type = "idpel" if is_pasca else "meter"
+    hp_items = scan_all_assignments_from_hp(d, scan_by=scan_type)
+    if not hp_items:
+        label_tipe = "ID Pelanggan" if is_pasca else "nomor meter"
+        print(f"[!] Tidak ada {label_tipe} yang berhasil discan dari HP. Program berhenti.")
         return
 
     # 4. Cocokkan data HP dengan file master
     antrean_eksekusi = []
     dilewati = []
 
-    for m in hp_meters:
-        if m in master_by_meter:
-            antrean_eksekusi.append(master_by_meter[m])
-        else:
-            dilewati.append(m)
+    if is_pasca:
+        for idp in hp_items:
+            if idp in master_by_idpel:
+                antrean_eksekusi.append(master_by_idpel[idp])
+            else:
+                dilewati.append(idp)
+    else:
+        for m in hp_items:
+            if m in master_by_meter:
+                antrean_eksekusi.append(master_by_meter[m])
+            elif m in master_by_idpel:
+                antrean_eksekusi.append(master_by_idpel[m])
+            else:
+                dilewati.append(m)
 
-    total_hp = len(hp_meters)
+    total_hp = len(hp_items)
     total_cocok = len(antrean_eksekusi)
     total_lewat = len(dilewati)
 
