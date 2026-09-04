@@ -473,8 +473,8 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT):
     Memproses satu baris data IDPEL:
     Cari IDPEL -> Buka -> BLOK I Cek IDPEL -> BLOK II Ganti NIK & Cek NIK -> Kirim
     """
-    idpel = row_data["id_pelanggan"]
-    nik_baru = row_data["NIK_Perbaikan"]
+    idpel = str(row_data["id_pelanggan"]).strip()
+    nik_baru = str(row_data["NIK_Perbaikan"]).strip()
     
     print(f"\n========================================================")
     print(f"[*] MEMPROSES IDPEL : {idpel}")
@@ -603,37 +603,68 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT):
             break
     time.sleep(0.5)
 
-    # 8. BLOK I: Verifikasi halaman terbuka, Geser layar cepat, & Klik 'Cek ID Pelanggan'
+    # 8. BLOK I: Verifikasi halaman terbuka, Geser layar agar Cek ID Pelanggan terangkat, & Klik
     print("[*] Menunggu halaman BLOK I termuat...")
     for _ in range(20):
         if d(text="Cek ID Pelanggan").exists or d(text="BERIKUTNYA BLOK II").exists or d(textContains="ID pelanggan").exists or d(textContains="BLOK I").exists:
             break
         time.sleep(0.3)
 
-    # Scroll kecil bertahap sampai tombol 'Cek ID Pelanggan' terlihat
+    # Pastikan posisi tombol 'Cek ID Pelanggan' tidak terhimpit di batas bawah layar.
+    # Secara default di BLOK I tombol berada di y > 1400 mepet navigation bar.
+    # Selalu geser layar 1 kali jika posisi tombol mepet bawah (y > 1300) atau belum terlihat.
     btn_cek_idpel = d(text="Cek ID Pelanggan")
-    for attempt in range(1, 6):
-        if btn_cek_idpel.exists:
-            break
-        print(f"[*] BLOK I: Menggeser layar sedikit (percobaan {attempt}/5)...")
+    need_scroll = True
+    if btn_cek_idpel.exists:
+        try:
+            info = btn_cek_idpel.info
+            bounds = info.get("bounds", {})
+            top_y = bounds.get("top", 0)
+            bottom_y = bounds.get("bottom", 1600)
+            if 250 <= top_y and bottom_y <= 1300:
+                need_scroll = False
+        except Exception:
+            pass
+
+    if need_scroll:
+        print("[*] BLOK I: Menggeser layar sedikit agar tombol 'Cek ID Pelanggan' terangkat ke area nyaman...")
         scroll_down_small(d, duration=0.35)
-        time.sleep(0.5)
+        time.sleep(0.6)
+        btn_cek_idpel = d(text="Cek ID Pelanggan")
+
+    if not btn_cek_idpel.exists:
+        # Coba scroll 1 kali lagi jika belum terlihat
+        scroll_down_small(d, duration=0.35)
+        time.sleep(0.6)
         btn_cek_idpel = d(text="Cek ID Pelanggan")
 
     if not btn_cek_idpel or not btn_cek_idpel.exists:
         raise Exception("Gagal masuk ke BLOK I / Tombol 'Cek ID Pelanggan' tidak ditemukan.")
 
-    print("[*] BLOK I: Mengklik 'Cek ID Pelanggan'...")
-    btn_cek_idpel.click()
+    # Ambil koordinat fisik tombol untuk sentuhan langsung (menjamin event onclick WebView terpemicu)
+    try:
+        cx, cy = btn_cek_idpel.center()
+        print(f"[*] BLOK I: Mengklik fisik 'Cek ID Pelanggan' di ({cx}, {cy})...")
+        d.click(cx, cy)
+        time.sleep(0.5)
+        # Penegasan sentuhan kedua jika belum memicu respon
+        if not (d(textContains="Hasil pengecekan").exists or d(textContains="STATUS").exists or d(resourceId="id.go.bpsfasih:id/card_progress").exists):
+            d.click(cx, cy)
+    except Exception as e:
+        print(f"[!] Gagal klik fisik ({e}), fallback klik logis...")
+        btn_cek_idpel.click()
     
-    # Tunggu respon verifikasi ID Pelanggan dari server (card_progress)
+    # Tunggu respon verifikasi ID Pelanggan dari server (card_progress atau teks hasil pengecekan)
     print("[*] Menunggu respon Cek ID Pelanggan...")
     for _ in range(25):
         time.sleep(0.3)
-        if not d(resourceId="id.go.bpsfasih:id/card_progress").exists:
+        if d(textContains="Hasil pengecekan").exists or d(textContains="STATUS").exists:
+            print("[OK] Hasil pengecekan ID Pelanggan berhasil terverifikasi!")
             break
+        if not d(resourceId="id.go.bpsfasih:id/card_progress").exists:
+            pass
     hide_keyboard(d)
-    time.sleep(0.4)
+    time.sleep(0.5)
 
     # 9. Klik 'BERIKUTNYA BLOK II' (Hanya klik 1x -> Cek kata NIK di layar -> Jika belum ada, klik lagi)
     print("[*] Berpindah ke BLOK II...")
