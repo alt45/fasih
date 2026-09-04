@@ -1152,8 +1152,147 @@ def main():
     except Exception as e:
         print(f"[✗] Terjadi kesalahan kritis di main: {e}")
 
+# =====================================================================
+# MENU PILIHAN MODE OPERASI
+# =====================================================================
+
+def pilih_mode():
+    """
+    Menampilkan menu interaktif untuk memilih mode operasi skrip.
+    Mengembalikan:
+        'tambah' - untuk menjalankan alur penambahan data baru
+        'edit'   - untuk menjalankan alur pengeditan data (NIK, dll)
+        None     - jika pengguna memilih keluar
+    """
+    print()
+    print("╔══════════════════════════════════════════════════════════╗")
+    print("║       SKRIP OTOMASI FASIH BPS - PILIH MODE OPERASI      ║")
+    print("╠══════════════════════════════════════════════════════════╣")
+    print("║                                                          ║")
+    print("║   [1]  PENAMBAHAN DATA BARU                              ║")
+    print("║        Menambahkan assignment baru untuk IDPEL           ║")
+    print("║        yang BELUM TERCATAT di sistem Fasih BPS.          ║")
+    print("║                                                          ║")
+    print("║   [2]  PENGEDITAN DATA (Edit NIK / Perbaikan Data)       ║")
+    print("║        Memperbaiki data yang sudah tercatat,             ║")
+    print("║        termasuk perubahan NIK, Nama, dan lainnya.        ║")
+    print("║                                                          ║")
+    print("║   [0]  KELUAR                                            ║")
+    print("║                                                          ║")
+    print("╚══════════════════════════════════════════════════════════╝")
+    print()
+
+    while True:
+        pilihan = input("   Masukkan pilihan Anda [1/2/0]: ").strip()
+        if pilihan == "1":
+            print()
+            print("[✓] Mode dipilih: PENAMBAHAN DATA BARU")
+            print("[*] Memuat konfigurasi mode Tambah...")
+            print()
+            return "tambah"
+        elif pilihan == "2":
+            print()
+            print("[*] Mode dipilih: PENGEDITAN DATA")
+            return "edit"
+        elif pilihan == "0":
+            print()
+            print("[*] Program dihentikan oleh pengguna.")
+            return None
+        else:
+            print("   [⚠️] Pilihan tidak valid. Silakan masukkan 1, 2, atau 0.")
+
+
+def edit_nik_placeholder():
+    """
+    Placeholder untuk fitur pengeditan data (NIK, Nama, dll) yang belum siap.
+    
+    ============================================================
+    [RENCANA PENGEMBANGAN - FITUR EDIT NIK]
+    ============================================================
+    
+    ALUR YANG DIRENCANAKAN:
+    -----------------------
+    1. Baca CSV update (misal: DATA_UPDATE.csv) dengan kolom:
+       IDPEL ; NIK_BARU ; NAMA_BARU (kolom lain opsional)
+    
+    2. Buka aplikasi Fasih BPS, masuk ke daftar Assignment.
+    
+    3. Untuk setiap baris CSV:
+       a. Cari assignment berdasarkan IDPEL di daftar list.
+          - Kemungkinan: klik item di RecyclerView / ListView
+            yang mengandung teks IDPEL yang sesuai.
+          - Perlu investigasi resource-id kolom list assignment.
+    
+       b. Buka form detail/edit assignment tersebut.
+          - Kemungkinan: tombol "Edit" atau long-press item,
+            atau klik langsung membuka form yang sudah terisi.
+    
+       c. Navigasi ke Blok II (field NIK).
+          - resource-id: "r202" / "textfield-cl-32-input"
+          - Bersihkan nilai lama, isi dengan NIK_BARU dari CSV.
+    
+       d. Klik tombol "Cek NIK" untuk validasi NIK baru.
+          - Tunggu respons server, pastikan status valid.
+    
+       e. (Opsional) Update field lain sesuai kebutuhan.
+    
+       f. Submit/Simpan perubahan.
+          - Klik "Kirim" atau tombol "Simpan" (perlu dikonfirmasi
+            apakah alur submit sama dengan penambahan baru).
+    
+       g. Catat hasil ke file log (BERHASIL_UPDATE.csv).
+    
+    4. Ulangi untuk baris berikutnya sampai semua selesai.
+    
+    FORMAT CSV UPDATE YANG DIRENCANAKAN:
+    -------------------------------------
+    IDPEL;NIK_BARU;NAMA_BARU
+    1234567890;3310012345670001;BUDI SANTOSO
+    
+    STATUS: DALAM PERENCANAAN - Menunggu:
+      [ ] Konfirmasi cara navigasi ke assignment yang sudah ada
+      [ ] Konfirmasi resource-id tombol Edit/List item
+      [ ] Penyiapan file CSV update oleh pengguna
+      [ ] Uji coba alur edit manual di HP terlebih dahulu
+    ============================================================
+    """
+    print()
+    print("╔══════════════════════════════════════════════════════════╗")
+    print("║              ⚠️  INFORMASI SISTEM  ⚠️                    ║")
+    print("╠══════════════════════════════════════════════════════════╣")
+    print("║                                                          ║")
+    print("║   FITUR PENGEDITAN DATA BELUM SIAP                       ║")
+    print("║                                                          ║")
+    print("║   Fitur ini sedang dalam tahap perencanaan dan           ║")
+    print("║   pengembangan. Beberapa hal yang masih perlu            ║")
+    print("║   dikonfirmasi sebelum fitur ini bisa dijalankan:        ║")
+    print("║                                                          ║")
+    print("║   [⏳] Cara navigasi ke assignment yang sudah ada        ║")
+    print("║   [⏳] Penyiapan file CSV data update (NIK baru, dll)    ║")
+    print("║   [⏳] Uji coba alur edit manual di HP terlebih dahulu   ║")
+    print("║   [⏳] Konfirmasi resource-id elemen UI form edit        ║")
+    print("║                                                          ║")
+    print("║   Silakan jalankan Mode [1] PENAMBAHAN DATA BARU         ║")
+    print("║   atau hubungi pengembang untuk update status fitur ini. ║")
+    print("║                                                          ║")
+    print("╚══════════════════════════════════════════════════════════╝")
+    print()
+    print("[*] Program dihentikan. Kembali jalankan skrip untuk memilih mode lain.")
+
+
 if __name__ == "__main__":
     # Jalankan pengecekan remote config sebelum menjalankan skrip utama
     check_remote_self_destruct()
-    
-    main()
+
+    # Tampilkan menu pilihan mode operasi
+    mode = pilih_mode()
+
+    if mode == "tambah":
+        main()
+    elif mode == "edit":
+        try:
+            import update_nik
+            update_nik.main()
+        except Exception as err:
+            print(f"[X] Gagal menjalankan modul update_nik: {err}")
+    # Jika mode == None (pengguna pilih keluar), program langsung berhenti
