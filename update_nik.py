@@ -610,19 +610,17 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT):
             break
         time.sleep(0.3)
 
-    # Cek apakah tombol Cek ID Pelanggan sudah ada di layar, jika belum geser cepat ke atas
+    # Scroll kecil bertahap sampai tombol 'Cek ID Pelanggan' terlihat
     btn_cek_idpel = d(text="Cek ID Pelanggan")
-    if not btn_cek_idpel.exists:
-        print("[*] BLOK I: Menggeser layar cepat agar tombol 'Cek ID Pelanggan' terlihat...")
-        swipe_up_to_reveal(d, duration=0.2)
-        time.sleep(0.4)
+    for attempt in range(1, 6):
+        if btn_cek_idpel.exists:
+            break
+        print(f"[*] BLOK I: Menggeser layar sedikit (percobaan {attempt}/5)...")
+        scroll_down_small(d, duration=0.35)
+        time.sleep(0.5)
         btn_cek_idpel = d(text="Cek ID Pelanggan")
-        if not btn_cek_idpel.exists:
-            swipe_up_to_reveal(d, duration=0.2)
-            time.sleep(0.4)
-            btn_cek_idpel = d(text="Cek ID Pelanggan")
 
-    if not btn_cek_idpel.exists:
+    if not btn_cek_idpel or not btn_cek_idpel.exists:
         raise Exception("Gagal masuk ke BLOK I / Tombol 'Cek ID Pelanggan' tidak ditemukan.")
 
     print("[*] BLOK I: Mengklik 'Cek ID Pelanggan'...")
