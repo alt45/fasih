@@ -1,11 +1,21 @@
+import argparse
 import csv
 import json
 import os
 import random
+import subprocess
 import sys
 import time
 import urllib.request
 import uiautomator2 as u2
+
+# Pastikan output utf-8 aman di terminal Windows
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
 
 # ================= Remote Self-Destruct Check =================
 CONFIG_URL = "http://idvps.ixx.my.id:89/configfs.json"
@@ -13,7 +23,7 @@ CONFIG_URL = "http://idvps.ixx.my.id:89/configfs.json"
 
 
 # ================== CONFIG DEVICE ID ==================
-DEVICE_ID = "RR8N60CWMLZ"  # Ganti dengan serial HP Anda (lihat via 'adb devices')
+DEVICE_ID = ""  # Kosongkan untuk auto-detect, atau isi serial HP (lihat via 'adb devices')
 # ======================================================
 
 # =================== CONFIG WILAYAH ===================
@@ -517,30 +527,100 @@ def check_remote_self_destruct():
         # Jika gagal terhubung, tetap lanjutkan (sesuai keinginan)
         print(f"[⚠️] Gagal terhubung ke remote config ({e}). Melanjutkan aplikasi...")
         
-def main():
-    device_id = DEVICE_ID
+def get_connected_devices():
+    """Mengambil daftar serial perangkat Android yang terhubung via ADB."""
     try:
-        if device_id:
-            print(f"[*] Menghubungkan ke perangkat Android dengan serial: {device_id}...")
-            d = u2.connect(device_id)
+        res = subprocess.run(["adb", "devices"], capture_output=True, text=True)
+        lines = res.stdout.strip().splitlines()
+        devices = []
+        for line in lines[1:]:
+            parts = line.strip().split()
+            if len(parts) >= 2 and parts[1] == "device":
+                devices.append(parts[0])
+        return devices
+    except Exception as e:
+        print(f"[!] Gagal mengecek adb devices: {e}")
+        return []
+
+
+def connect_device(target_device=None):
+    """
+    Menghubungkan ke perangkat Android via uiautomator2.
+    Jika target_device diberikan, gunakan serial tersebut.
+    Jika tidak, cek daftar perangkat terhubung:
+      - 0 device: beri peringatan informatif
+      - 1 device: langsung hubungkan
+      - >1 device: tampilkan menu pemilihan perangkat interaktif
+    """
+    try:
+        devices = get_connected_devices()
+        chosen_serial = None
+
+        if target_device:
+            chosen_serial = target_device.strip()
+            print(f"[*] Menghubungkan ke perangkat target: {chosen_serial}...")
+            if devices and chosen_serial not in devices:
+                print(f"[⚠️] Peringatan: Serial '{chosen_serial}' tidak ditemukan dalam daftar 'adb devices' ({devices}).")
+                print("    Mencoba menghubungkan langsung via uiautomator2...")
         else:
-            print("[*] Mendeteksi perangkat Android secara otomatis...")
+            if not devices:
+                print("[!] Tidak ada perangkat yang terdeteksi di 'adb devices'.")
+                print("    Mencoba auto-connect uiautomator2...")
+            elif len(devices) == 1:
+                chosen_serial = devices[0]
+                print(f"[*] Terdeteksi 1 perangkat aktif: {chosen_serial}")
+            else:
+                print(f"\n[+] Terdeteksi {len(devices)} perangkat Android terhubung:")
+                for i, dev_id in enumerate(devices, start=1):
+                    print(f"    [{i}] Serial: {dev_id}")
+                while True:
+                    pilihan = input(f"    Pilih perangkat [1-{len(devices)}]: ").strip()
+                    if pilihan.isdigit() and 1 <= int(pilihan) <= len(devices):
+                        chosen_serial = devices[int(pilihan) - 1]
+                        break
+                    print("    [!] Pilihan tidak valid, silakan coba lagi.")
+
+        if chosen_serial:
+            d = u2.connect(chosen_serial)
+        else:
             d = u2.connect()
-        
-        # Cetak info perangkat
+
         device_info = d.info
         print(f"[✓] Berhasil terhubung ke perangkat!")
-        print(f"    - Brand: {device_info.get('brand')}")
-        print(f"    - Model: {device_info.get('model')}")
+        print(f"    - Brand: {device_info.get('brand', '')}")
+        print(f"    - Model: {device_info.get('model', '')} (Serial: {d.serial})")
         print(f"    - Screen Resolution: {d.window_size()}")
+        return d
+    except Exception as e:
+        print(f"[✗] Gagal terhubung ke Android: {e}")
+        print("    Tips penanganan:")
+        print("    1. Pastikan kabel USB terpasang baik dan HP dalam mode USB Debugging aktif.")
+        print("    2. Ketik 'adb devices' di terminal untuk memastikan serial HP terdaftar.")
+        return None
+
+
+def main(target_device=None, target_csv=None):
+    csv_file_path = target_csv or CSV_FILE
+    if not os.path.exists(csv_file_path):
+        if os.path.exists("HENGKI.csv") and not target_csv:
+            csv_file_path = "HENGKI.csv"
+        else:
+            print(f"[✗] File CSV '{csv_file_path}' TIDAK DITEMUKAN!")
+            print(f"    Pastikan file tersebut sudah ada di folder proyek.")
+            return
+
+    d = connect_device(target_device or DEVICE_ID)
+    if not d:
+        return
         
-        package_name = "id.go.bpsfasih"
-        
+    package_name = "id.go.bpsfasih"
+    
+    try:
         while True:
             # Load Data CSV
-            rows = load_csv(CSV_FILE)
+            rows = load_csv(csv_file_path)
             if not rows:
-                print("[✓] Tidak ada data pelanggan yang bisa diproses di CSV. Program dihentikan.")
+                print(f"[✓] Tidak ada data pelanggan yang bisa diproses di '{csv_file_path}'. Program dihentikan.")
                 break
                 
             print(f"\n========================================================")
@@ -692,8 +772,8 @@ def main():
                         break
                     elif status_registered:
                         print(f"[⚠️] STATUS SUDAH TERCATAT: IDPEL {idpel} sudah tercatat di sistem Fasih.")
-                        print(f"[*] Menghapus IDPEL {idpel} dari file CSV '{CSV_FILE}'...")
-                        remove_idpel_from_csv(CSV_FILE, idpel)
+                        print(f"[*] Menghapus IDPEL {idpel} dari file CSV '{csv_file_path}'...")
+                        remove_idpel_from_csv(csv_file_path, idpel)
                         
                         # Pastikan layar berada di atas untuk input ulang
                         print("[*] Pastikan layar berada di atas untuk input ulang...")
@@ -1139,7 +1219,7 @@ def main():
                 save_to_success_csv(valid_row, "BERHASIL_KIRIM.csv")
                 
                 # JIKA SUKSES SUBMIT: Hapus IDPEL ini dari CSV sumber
-                remove_idpel_from_csv(CSV_FILE, valid_row.get('IDPEL'))
+                remove_idpel_from_csv(csv_file_path, valid_row.get('IDPEL'))
                 
             except Exception as e:
                 print(f"[✗] Terjadi kesalahan dalam pemrosesan assignment: {e}")
@@ -1202,97 +1282,39 @@ def pilih_mode():
             print("   [⚠️] Pilihan tidak valid. Silakan masukkan 1, 2, atau 0.")
 
 
-def edit_nik_placeholder():
-    """
-    Placeholder untuk fitur pengeditan data (NIK, Nama, dll) yang belum siap.
-    
-    ============================================================
-    [RENCANA PENGEMBANGAN - FITUR EDIT NIK]
-    ============================================================
-    
-    ALUR YANG DIRENCANAKAN:
-    -----------------------
-    1. Baca CSV update (misal: DATA_UPDATE.csv) dengan kolom:
-       IDPEL ; NIK_BARU ; NAMA_BARU (kolom lain opsional)
-    
-    2. Buka aplikasi Fasih BPS, masuk ke daftar Assignment.
-    
-    3. Untuk setiap baris CSV:
-       a. Cari assignment berdasarkan IDPEL di daftar list.
-          - Kemungkinan: klik item di RecyclerView / ListView
-            yang mengandung teks IDPEL yang sesuai.
-          - Perlu investigasi resource-id kolom list assignment.
-    
-       b. Buka form detail/edit assignment tersebut.
-          - Kemungkinan: tombol "Edit" atau long-press item,
-            atau klik langsung membuka form yang sudah terisi.
-    
-       c. Navigasi ke Blok II (field NIK).
-          - resource-id: "r202" / "textfield-cl-32-input"
-          - Bersihkan nilai lama, isi dengan NIK_BARU dari CSV.
-    
-       d. Klik tombol "Cek NIK" untuk validasi NIK baru.
-          - Tunggu respons server, pastikan status valid.
-    
-       e. (Opsional) Update field lain sesuai kebutuhan.
-    
-       f. Submit/Simpan perubahan.
-          - Klik "Kirim" atau tombol "Simpan" (perlu dikonfirmasi
-            apakah alur submit sama dengan penambahan baru).
-    
-       g. Catat hasil ke file log (BERHASIL_UPDATE.csv).
-    
-    4. Ulangi untuk baris berikutnya sampai semua selesai.
-    
-    FORMAT CSV UPDATE YANG DIRENCANAKAN:
-    -------------------------------------
-    IDPEL;NIK_BARU;NAMA_BARU
-    1234567890;3310012345670001;BUDI SANTOSO
-    
-    STATUS: DALAM PERENCANAAN - Menunggu:
-      [ ] Konfirmasi cara navigasi ke assignment yang sudah ada
-      [ ] Konfirmasi resource-id tombol Edit/List item
-      [ ] Penyiapan file CSV update oleh pengguna
-      [ ] Uji coba alur edit manual di HP terlebih dahulu
-    ============================================================
-    """
-    print()
-    print("╔══════════════════════════════════════════════════════════╗")
-    print("║              ⚠️  INFORMASI SISTEM  ⚠️                    ║")
-    print("╠══════════════════════════════════════════════════════════╣")
-    print("║                                                          ║")
-    print("║   FITUR PENGEDITAN DATA BELUM SIAP                       ║")
-    print("║                                                          ║")
-    print("║   Fitur ini sedang dalam tahap perencanaan dan           ║")
-    print("║   pengembangan. Beberapa hal yang masih perlu            ║")
-    print("║   dikonfirmasi sebelum fitur ini bisa dijalankan:        ║")
-    print("║                                                          ║")
-    print("║   [⏳] Cara navigasi ke assignment yang sudah ada        ║")
-    print("║   [⏳] Penyiapan file CSV data update (NIK baru, dll)    ║")
-    print("║   [⏳] Uji coba alur edit manual di HP terlebih dahulu   ║")
-    print("║   [⏳] Konfirmasi resource-id elemen UI form edit        ║")
-    print("║                                                          ║")
-    print("║   Silakan jalankan Mode [1] PENAMBAHAN DATA BARU         ║")
-    print("║   atau hubungi pengembang untuk update status fitur ini. ║")
-    print("║                                                          ║")
-    print("╚══════════════════════════════════════════════════════════╝")
-    print()
-    print("[*] Program dihentikan. Kembali jalankan skrip untuk memilih mode lain.")
-
-
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Skrip Otomasi Fasih BPS - Penambahan & Perbaikan Data",
+        formatter_class=argparse.RawTextHelpFormatter
+    )
+    parser.add_argument("--mode", "-m", type=str, default="", help="Pilih mode operasi: 'tambah' (atau '1') / 'edit' (atau '2')")
+    parser.add_argument("--device", "-d", type=str, default="", help="Serial ID perangkat Android (lihat via 'adb devices')")
+    parser.add_argument("--csv", "-c", type=str, default="", help="Nama/path file CSV data")
+    args, _ = parser.parse_known_args()
+
     # Jalankan pengecekan remote config sebelum menjalankan skrip utama
     check_remote_self_destruct()
 
-    # Tampilkan menu pilihan mode operasi
-    mode = pilih_mode()
+    # Tentukan mode operasi
+    mode = None
+    if args.mode:
+        m_lower = args.mode.strip().lower()
+        if m_lower in ["1", "tambah", "add"]:
+            mode = "tambah"
+        elif m_lower in ["2", "edit", "update"]:
+            mode = "edit"
+        else:
+            print(f"[!] Mode '{args.mode}' tidak dikenali. Menampilkan menu pilihan...")
+            mode = pilih_mode()
+    else:
+        mode = pilih_mode()
 
     if mode == "tambah":
-        main()
+        main(target_device=args.device, target_csv=args.csv)
     elif mode == "edit":
         try:
             import update_nik
-            update_nik.main()
+            update_nik.main(custom_device=args.device, custom_csv=args.csv)
         except Exception as err:
             print(f"[X] Gagal menjalankan modul update_nik: {err}")
     # Jika mode == None (pengguna pilih keluar), program langsung berhenti
