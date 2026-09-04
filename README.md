@@ -13,18 +13,17 @@ Aplikasi ini memiliki 2 mode operasi utama yang dapat dipilih melalui menu inter
 - **Pembersihan Nama Pintar:** Sanitasi karakter khusus dan tanda baca agar sesuai aturan validasi aplikasi.
 - **Log Pelacakan:** Data sukses dicatat ke `BERHASIL_KIRIM.csv` dan otomatis dihapus dari file sumber (`HENGKI.csv`).
 
-### 2. Perbaikan / Update Data NIK (`update_nik.py`)
-- **Pencarian Assignment Cepat:** Menginput ID Pelanggan di kolom *Search* pada tabel penugasan.
-- **Penanganan IDPEL Tidak Ditemukan:** Jika ID Pelanggan tidak ada di penugasan, otomatis dicatat ke `IDPEL_TIDAK_DITEMUKAN.csv`, dihapus dari daftar CSV input, kolom pencarian dibersihkan, dan langsung beralih ke ID berikutnya tanpa macet.
-- **Validasi BLOK I:** Menggulir layar, klik **Cek ID Pelanggan**, lalu navigasi ke BLOK II.
-- **Pembaruan NIK Cepat & Presisi di BLOK II:** Menghapus NIK lama, mengetik NIK perbaikan secara instan, dan memicu penekanan tombol fisik **Cek NIK**.
-- **Pengecekan Pemadanan Server:**
-  - Jika hasil pemadanan NIK **`TIDAK DITEMUKAN`**: otomatis dicatat ke `NIK_TIDAK_DITEMUKAN.csv`, dihapus dari CSV input, form dibatalkan secara bersih (menekan tombol kembali & konfirmasi `IYA`), dan lanjut ke baris berikutnya.
-  - Jika hasil pemadanan **`SESUAI / DITEMUKAN`**: melanjutkan proses penyimpanan.
-- **Pengecekan Galat Otomatis:** Memeriksa status galat aktif (harus `GALAT 0`) sebelum konfirmasi pengiriman.
-- **Deteksi Layar Akhir Adaptif:**
-  - **Jika Masuk ke `Halaman Upload`:** Otomatis mendeteksi status `PENDING SUBMIT`, mengklik **`Cek Status`**, menunggu hingga status antrian berubah menjadi **`SUCCESS SUBMIT`**, lalu menekan tombol **Kembali (Back)** menuju Daftar Assignment.
-  - **Jika Langsung Kembali ke `Daftar Assignment`:** Otomatis mendeteksi halaman depan tanpa waktu tunggu yang sia-sia, membersihkan kotak pencarian, mencatat hasil ke `SUKSES_UPDATE_NIK.csv`, dan melanjutkan ke baris berikutnya.
+### 2. Perbaikan / Update Data NIK (Forward Mode: CSV -> Cari di HP)
+- **Pencarian Assignment:** Menginput ID Pelanggan dari CSV di kolom *Search* pada tabel penugasan.
+- **Penanganan IDPEL Tidak Ditemukan:** Otomatis dicatat ke `IDPEL_TIDAK_DITEMUKAN.csv` dan dilewati tanpa macet.
+- **Validasi BLOK I & II:** Verifikasi ID Pelanggan, berpindah ke Blok II (1x klik adaptif dengan verifikasi kata NIK), mengetik NIK baru, dan memicu tombol fisik Cek NIK.
+- **Pemadanan & Submit:** Memverifikasi status pemadanan server BPS (DITEMUKAN vs TIDAK DITEMUKAN), mengecek galat (harus `GALAT 0`), submit, cek antrean upload `SUCCESS`, dan kembali ke Daftar Assignment.
+
+### 3. Pengeditan Data Terbalik (Reverse Mode: Pindai HP -> Cocokkan Master)
+- **Sangat Cepat untuk Master CSV Besar:** Jika file master berisi ribuan data (misal 5.000 - 13.000 baris) sedangkan di HP hanya ada puluhan penugasan, mode ini memindai seluruh nomor meter/IDPEL di HP terlebih dahulu.
+- **Show 100 entries Otomatis:** Membuka seluruh penugasan dalam 1 halaman utuh tanpa pagination.
+- **Pencocokan Instan:** Mencocokkan data HP dengan file master (`mastermeter.csv` atau `master.csv`) di memori dalam hitungan milidetik.
+- **Eksekusi Terarah:** Hanya mengeksekusi penugasan yang memang cocok dan memerlukan perbaikan NIK.
 
 ---
 
@@ -83,17 +82,22 @@ Posisikan layar HP pada halaman depan **Daftar Assignment** di aplikasi Fasih BP
 ```powershell
 python main.py
 ```
-Pilih mode yang diinginkan:
-- Ketik **`1`** untuk Penambahan Data Baru.
-- Ketik **`2`** untuk Perbaikan Data NIK.
+1. Pilih mode yang diinginkan:
+   - Ketik **`1`** untuk Penambahan Data Baru.
+   - Ketik **`2`** untuk Perbaikan Data NIK.
+   - Ketik **`0`** untuk Keluar.
+2. Setelah memilih mode, sistem akan menampilkan daftar seluruh file CSV yang ada di folder proyek lengkap dengan jumlah data:
+   - Ketik **nomor urut** (misal: `1`, `2`, `3`) untuk memilih file langsung.
+   - Atau ketik **nama file secara langsung** (misal: `data_saya.csv` atau `data_saya`).
+   - Ketik **`0`** untuk batal dan kembali ke menu utama.
 
 ### Cara 2: Menjalankan Langsung Skrip Update NIK (Dukungan Multi-Device & Custom CSV)
 
-- **Mode Standar (Auto-detect):**
+- **Mode Interaktif Standar:**
   ```powershell
   python update_nik.py
   ```
-  *(Jika terhubung lebih dari 1 HP, script akan memunculkan menu interaktif untuk memilih perangkat).*
+  *(Script akan memunculkan menu interaktif untuk memilih file CSV dan memilih perangkat jika terhubung lebih dari 1 HP).*
 
 - **Mode Multi-Device / Custom File CSV:**
   Gunakan parameter `--device` (atau `-d`) dan `--csv` (atau `-c`):

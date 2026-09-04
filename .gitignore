@@ -18,6 +18,9 @@ Thumbs.db
 
 # File CSV pelacakan sukses
 *.csv
+*.xlsx
+*.xls
+master_backup.csv
 
 # Dump UI sementara
 ui_dump/

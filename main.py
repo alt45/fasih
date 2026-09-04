@@ -31,8 +31,88 @@ PROVINSI = "JAWA TENGAH"
 KABUPATEN = "TEMANGGUNG"
 # ======================================================
 
-CSV_FILE = "DATA.csv"
 CSV_DELIMITER = ";"
+
+
+def pilih_file_csv(judul_mode="Penambahan Data Baru"):
+    """
+    Menampilkan daftar file CSV yang tersedia di folder proyek dan meminta
+    pengguna memilih nomor urut file atau mengetik nama file secara manual.
+    Mengembalikan path file CSV yang valid, atau None jika pengguna membatalkan.
+    """
+    ignore_files = {
+        "berhasil_kirim.csv",
+        "sukses_update_nik.csv",
+        "idpel_tidak_ditemukan.csv",
+        "nik_tidak_ditemukan.csv",
+        "nik_gagal_update.csv",
+        "idpeltmg_belum_tercatat.csv",
+        "idpeltmg_sudah_tercatat.csv",
+        "idpeltmg_tidak_ditemukan.csv",
+        "idpeltmg_gagal_cek.csv",
+    }
+    
+    all_files = [f for f in os.listdir(".") if f.lower().endswith(".csv") and os.path.isfile(f)]
+    candidate_files = [f for f in all_files if f.lower() not in ignore_files]
+    candidate_files.sort()
+
+    print()
+    print("╔══════════════════════════════════════════════════════════╗")
+    mode_text = f"PILIH FILE CSV TARGET - {judul_mode}" if judul_mode else "PILIH FILE CSV TARGET"
+    print(f"║  {mode_text:<56}║")
+    print("╠══════════════════════════════════════════════════════════╣")
+
+    if candidate_files:
+        print("║  File CSV yang terdeteksi di folder:                     ║")
+        for i, f_name in enumerate(candidate_files, start=1):
+            count_str = ""
+            try:
+                with open(f_name, "r", encoding="utf-8-sig", errors="ignore") as f:
+                    lines = sum(1 for line in f if line.strip())
+                    data_count = max(0, lines - 1)
+                    count_str = f"({data_count} data)"
+            except Exception:
+                pass
+            item_str = f"[{i}] {f_name}"
+            print(f"║   {item_str:<32} {count_str:>20} ║")
+    else:
+        print("║  (Tidak ada file CSV input terdeteksi di folder)        ║")
+
+    print("║                                                          ║")
+    print("║   [0] Batal / Keluar                                     ║")
+    print("╚══════════════════════════════════════════════════════════╝")
+    print()
+
+    while True:
+        prompt_text = f"   Pilih nomor [1-{len(candidate_files)}] atau ketik nama file: " if candidate_files else "   Ketik nama file CSV (atau 0 untuk batal): "
+        pilihan = input(prompt_text).strip()
+
+        if not pilihan or pilihan == "0" or pilihan.lower() in ["batal", "exit", "keluar"]:
+            print("[*] Pemilihan file dibatalkan.")
+            return None
+
+        # Jika user memasukkan angka pilihan dari daftar
+        if pilihan.isdigit() and candidate_files:
+            idx = int(pilihan)
+            if 1 <= idx <= len(candidate_files):
+                selected = candidate_files[idx - 1]
+                print(f"[✓] File dipilih: {selected}\n")
+                return selected
+            else:
+                print(f"   [⚠️] Pilihan nomor {idx} di luar jangkauan (1-{len(candidate_files)}).")
+                continue
+
+        # Jika user mengetik nama file secara langsung
+        custom_name = pilihan
+        if not custom_name.lower().endswith(".csv") and not os.path.exists(custom_name):
+            if os.path.exists(custom_name + ".csv"):
+                custom_name = custom_name + ".csv"
+
+        if os.path.exists(custom_name):
+            print(f"[✓] File dipilih: {custom_name}\n")
+            return custom_name
+        else:
+            print(f"   [⚠️] File '{custom_name}' tidak ditemukan di folder. Silakan coba lagi.")
 
 
 def generate_random_phone():
@@ -528,68 +608,94 @@ def check_remote_self_destruct():
         print(f"[⚠️] Gagal terhubung ke remote config ({e}). Melanjutkan aplikasi...")
         
 def get_connected_devices():
-    """Mengambil daftar serial perangkat Android yang terhubung via ADB."""
+    """Mengambil daftar perangkat Android yang terhubung via ADB beserta model/nama perangkat."""
     try:
-        res = subprocess.run(["adb", "devices"], capture_output=True, text=True)
+        res = subprocess.run(["adb", "devices", "-l"], capture_output=True, text=True)
         lines = res.stdout.strip().splitlines()
         devices = []
         for line in lines[1:]:
-            parts = line.strip().split()
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.split()
             if len(parts) >= 2 and parts[1] == "device":
-                devices.append(parts[0])
+                serial = parts[0]
+                model = ""
+                product = ""
+                for p in parts[2:]:
+                    if p.startswith("model:"):
+                        model = p.split("model:", 1)[1].replace("_", " ")
+                    elif p.startswith("product:"):
+                        product = p.split("product:", 1)[1].replace("_", " ")
+                dev_name = model or product or "Perangkat Android"
+                devices.append({"serial": serial, "name": dev_name})
         return devices
     except Exception as e:
         print(f"[!] Gagal mengecek adb devices: {e}")
         return []
 
 
+def pilih_perangkat():
+    """
+    Menampilkan menu interaktif pemilihan perangkat Android jika terdeteksi lebih dari 1 perangkat.
+    Mengembalikan serial perangkat yang dipilih, atau None jika dibatalkan/kosong.
+    """
+    devices = get_connected_devices()
+    if not devices:
+        print("[!] Tidak ada perangkat yang terdeteksi di 'adb devices'.")
+        print("    Pastikan kabel USB terpasang baik dan HP dalam mode USB Debugging aktif.")
+        return None
+    elif len(devices) == 1:
+        chosen = devices[0]
+        print(f"[✓] Menggunakan perangkat: {chosen['name']} (Serial: {chosen['serial']})")
+        return chosen["serial"]
+
+    print()
+    print("╔══════════════════════════════════════════════════════════╗")
+    print("║             PILIH PERANGKAT ANDROID TARGET               ║")
+    print("╠══════════════════════════════════════════════════════════╣")
+    print(f"║  Terdeteksi {len(devices)} perangkat Android aktif:                  ║")
+    for i, dev in enumerate(devices, start=1):
+        dev_label = f"[{i}] {dev['name']} ({dev['serial']})"
+        print(f"║   {dev_label:<54} ║")
+    print("║                                                          ║")
+    print("║   [0] Batal / Keluar                                     ║")
+    print("╚══════════════════════════════════════════════════════════╝")
+    print()
+
+    while True:
+        pilihan = input(f"   Pilih perangkat [1-{len(devices)}] atau 0 untuk batal: ").strip()
+        if not pilihan or pilihan == "0" or pilihan.lower() in ["batal", "exit", "keluar"]:
+            print("[*] Pemilihan perangkat dibatalkan.")
+            return None
+        if pilihan.isdigit() and 1 <= int(pilihan) <= len(devices):
+            chosen = devices[int(pilihan) - 1]
+            print(f"[✓] Perangkat dipilih: {chosen['name']} (Serial: {chosen['serial']})\n")
+            return chosen["serial"]
+        print("   [⚠️] Pilihan tidak valid, silakan coba lagi.")
+
+
 def connect_device(target_device=None):
     """
     Menghubungkan ke perangkat Android via uiautomator2.
-    Jika target_device diberikan, gunakan serial tersebut.
-    Jika tidak, cek daftar perangkat terhubung:
-      - 0 device: beri peringatan informatif
-      - 1 device: langsung hubungkan
-      - >1 device: tampilkan menu pemilihan perangkat interaktif
     """
     try:
-        devices = get_connected_devices()
-        chosen_serial = None
-
-        if target_device:
-            chosen_serial = target_device.strip()
+        chosen_serial = target_device.strip() if target_device else None
+        
+        if not chosen_serial:
+            chosen_serial = pilih_perangkat()
+            if not chosen_serial:
+                return None
+        else:
             print(f"[*] Menghubungkan ke perangkat target: {chosen_serial}...")
-            if devices and chosen_serial not in devices:
-                print(f"[⚠️] Peringatan: Serial '{chosen_serial}' tidak ditemukan dalam daftar 'adb devices' ({devices}).")
-                print("    Mencoba menghubungkan langsung via uiautomator2...")
-        else:
-            if not devices:
-                print("[!] Tidak ada perangkat yang terdeteksi di 'adb devices'.")
-                print("    Mencoba auto-connect uiautomator2...")
-            elif len(devices) == 1:
-                chosen_serial = devices[0]
-                print(f"[*] Terdeteksi 1 perangkat aktif: {chosen_serial}")
-            else:
-                print(f"\n[+] Terdeteksi {len(devices)} perangkat Android terhubung:")
-                for i, dev_id in enumerate(devices, start=1):
-                    print(f"    [{i}] Serial: {dev_id}")
-                while True:
-                    pilihan = input(f"    Pilih perangkat [1-{len(devices)}]: ").strip()
-                    if pilihan.isdigit() and 1 <= int(pilihan) <= len(devices):
-                        chosen_serial = devices[int(pilihan) - 1]
-                        break
-                    print("    [!] Pilihan tidak valid, silakan coba lagi.")
 
-        if chosen_serial:
-            d = u2.connect(chosen_serial)
-        else:
-            d = u2.connect()
-
+        d = u2.connect(chosen_serial)
         device_info = d.info
-        print(f"[✓] Berhasil terhubung ke perangkat!")
-        print(f"    - Brand: {device_info.get('brand', '')}")
-        print(f"    - Model: {device_info.get('model', '')} (Serial: {d.serial})")
-        print(f"    - Screen Resolution: {d.window_size()}")
+        print(f"[✓] Berhasil terhubung ke: {device_info.get('brand', '')} {device_info.get('model', '')} (Serial: {d.serial})")
+        print(f"    Resolusi Layar: {d.window_size()}")
+        
+        global DEVICE_ID
+        DEVICE_ID = d.serial
         return d
     except Exception as e:
         print(f"[✗] Gagal terhubung ke Android: {e}")
@@ -600,14 +706,16 @@ def connect_device(target_device=None):
 
 
 def main(target_device=None, target_csv=None):
-    csv_file_path = target_csv or CSV_FILE
-    if not os.path.exists(csv_file_path):
-        if os.path.exists("HENGKI.csv") and not target_csv:
-            csv_file_path = "HENGKI.csv"
-        else:
-            print(f"[✗] File CSV '{csv_file_path}' TIDAK DITEMUKAN!")
-            print(f"    Pastikan file tersebut sudah ada di folder proyek.")
+    csv_file_path = target_csv
+    if not csv_file_path:
+        csv_file_path = pilih_file_csv(judul_mode="Penambahan Data Baru")
+        if not csv_file_path:
             return
+
+    if not os.path.exists(csv_file_path):
+        print(f"[✗] File CSV '{csv_file_path}' TIDAK DITEMUKAN!")
+        print(f"    Pastikan file tersebut sudah ada di folder proyek.")
+        return
 
     d = connect_device(target_device or DEVICE_ID)
     if not d:
@@ -1253,9 +1361,12 @@ def pilih_mode():
     print("║        Menambahkan assignment baru untuk IDPEL           ║")
     print("║        yang BELUM TERCATAT di sistem Fasih BPS.          ║")
     print("║                                                          ║")
-    print("║   [2]  PENGEDITAN DATA (Edit NIK / Perbaikan Data)       ║")
-    print("║        Memperbaiki data yang sudah tercatat,             ║")
-    print("║        termasuk perubahan NIK, Nama, dan lainnya.        ║")
+    print("║   [2]  PENGEDITAN DATA (Forward: File CSV -> Cari di HP) ║")
+    print("║        Mencari data dari file CSV ke HP satu per satu.   ║")
+    print("║                                                          ║")
+    print("║   [3]  PENGEDITAN DATA TERBALIK (Reverse: HP -> Master)  ║")
+    print("║        Pindai assignment di HP -> Cocokkan master.csv    ║")
+    print("║        Sangat cepat untuk master CSV berukuran besar!    ║")
     print("║                                                          ║")
     print("║   [0]  KELUAR                                            ║")
     print("║                                                          ║")
@@ -1263,7 +1374,7 @@ def pilih_mode():
     print()
 
     while True:
-        pilihan = input("   Masukkan pilihan Anda [1/2/0]: ").strip()
+        pilihan = input("   Masukkan pilihan Anda [1/2/3/0]: ").strip()
         if pilihan == "1":
             print()
             print("[✓] Mode dipilih: PENAMBAHAN DATA BARU")
@@ -1272,14 +1383,18 @@ def pilih_mode():
             return "tambah"
         elif pilihan == "2":
             print()
-            print("[*] Mode dipilih: PENGEDITAN DATA")
+            print("[*] Mode dipilih: PENGEDITAN DATA (FORWARD)")
             return "edit"
+        elif pilihan == "3":
+            print()
+            print("[*] Mode dipilih: PENGEDITAN DATA TERBALIK (REVERSE)")
+            return "reverse"
         elif pilihan == "0":
             print()
             print("[*] Program dihentikan oleh pengguna.")
             return None
         else:
-            print("   [⚠️] Pilihan tidak valid. Silakan masukkan 1, 2, atau 0.")
+            print("   [⚠️] Pilihan tidak valid. Silakan masukkan 1, 2, 3, atau 0.")
 
 
 if __name__ == "__main__":
@@ -1287,7 +1402,7 @@ if __name__ == "__main__":
         description="Skrip Otomasi Fasih BPS - Penambahan & Perbaikan Data",
         formatter_class=argparse.RawTextHelpFormatter
     )
-    parser.add_argument("--mode", "-m", type=str, default="", help="Pilih mode operasi: 'tambah' (atau '1') / 'edit' (atau '2')")
+    parser.add_argument("--mode", "-m", type=str, default="", help="Pilih mode: 'tambah' ('1') / 'edit' ('2') / 'reverse' ('3')")
     parser.add_argument("--device", "-d", type=str, default="", help="Serial ID perangkat Android (lihat via 'adb devices')")
     parser.add_argument("--csv", "-c", type=str, default="", help="Nama/path file CSV data")
     args, _ = parser.parse_known_args()
@@ -1295,26 +1410,70 @@ if __name__ == "__main__":
     # Jalankan pengecekan remote config sebelum menjalankan skrip utama
     check_remote_self_destruct()
 
-    # Tentukan mode operasi
-    mode = None
-    if args.mode:
-        m_lower = args.mode.strip().lower()
-        if m_lower in ["1", "tambah", "add"]:
-            mode = "tambah"
-        elif m_lower in ["2", "edit", "update"]:
-            mode = "edit"
+    while True:
+        # Tentukan mode operasi
+        mode = None
+        if args.mode:
+            m_lower = args.mode.strip().lower()
+            if m_lower in ["1", "tambah", "add"]:
+                mode = "tambah"
+            elif m_lower in ["2", "edit", "update"]:
+                mode = "edit"
+            elif m_lower in ["3", "reverse", "terbalik", "rev"]:
+                mode = "reverse"
+            else:
+                print(f"[!] Mode '{args.mode}' tidak dikenali. Menampilkan menu pilihan...")
+                mode = pilih_mode()
         else:
-            print(f"[!] Mode '{args.mode}' tidak dikenali. Menampilkan menu pilihan...")
             mode = pilih_mode()
-    else:
-        mode = pilih_mode()
 
-    if mode == "tambah":
-        main(target_device=args.device, target_csv=args.csv)
-    elif mode == "edit":
-        try:
-            import update_nik
-            update_nik.main(custom_device=args.device, custom_csv=args.csv)
-        except Exception as err:
-            print(f"[X] Gagal menjalankan modul update_nik: {err}")
-    # Jika mode == None (pengguna pilih keluar), program langsung berhenti
+        if not mode:
+            # Pengguna memilih keluar (0)
+            break
+
+        # Tentukan target device (pilih interaktif jika > 1 perangkat dan belum dispesifikasi via CLI)
+        target_device = args.device
+        if not target_device:
+            devices = get_connected_devices()
+            if len(devices) > 1:
+                target_device = pilih_perangkat()
+                if not target_device:
+                    if args.mode:
+                        break
+                    continue
+            elif len(devices) == 1:
+                target_device = devices[0]["serial"]
+                print(f"[✓] Terdeteksi 1 perangkat aktif: {devices[0]['name']} ({target_device})")
+
+        if mode == "tambah":
+            target_csv = args.csv or pilih_file_csv(judul_mode="Penambahan Data Baru")
+            if not target_csv:
+                if args.mode:
+                    break
+                continue
+            main(target_device=target_device, target_csv=target_csv)
+            break
+        elif mode == "edit":
+            target_csv = args.csv or pilih_file_csv(judul_mode="Perbaikan Data NIK")
+            if not target_csv:
+                if args.mode:
+                    break
+                continue
+            try:
+                import update_nik
+                update_nik.main(custom_device=target_device, custom_csv=target_csv, mode="forward")
+            except Exception as err:
+                print(f"[X] Gagal menjalankan modul update_nik: {err}")
+            break
+        elif mode == "reverse":
+            target_csv = args.csv or ("mastermeter.csv" if os.path.exists("mastermeter.csv") else ("master.csv" if os.path.exists("master.csv") else pilih_file_csv(judul_mode="Pengeditan NIK Terbalik (Master CSV)")))
+            if not target_csv:
+                if args.mode:
+                    break
+                continue
+            try:
+                import update_nik
+                update_nik.run_reverse_mode(target_device=target_device, custom_csv=target_csv)
+            except Exception as err:
+                print(f"[X] Gagal menjalankan mode reverse: {err}")
+            break
