@@ -126,6 +126,7 @@ def load_input_data(filepath):
             
             col_idpel = 0
             col_meter = None
+            col_daya = None
             col_nik = 1
             
             if header:
@@ -133,6 +134,8 @@ def load_input_data(filepath):
                 for i, col_name in enumerate(h_lower):
                     if "meter" in col_name:
                         col_meter = i
+                    elif "daya" in col_name or "tarif" in col_name:
+                        col_daya = i
                     elif "nik" in col_name:
                         col_nik = i
                     elif "id" in col_name or "pelanggan" in col_name:
@@ -147,6 +150,7 @@ def load_input_data(filepath):
                 idpel = str(r[col_idpel]).strip() if col_idpel < len(r) else ""
                 no_meter = str(r[col_meter]).strip() if (col_meter is not None and col_meter < len(r)) else ""
                 nik_baru = str(r[col_nik]).strip() if col_nik < len(r) else ""
+                daya_val = str(r[col_daya]).strip() if (col_daya is not None and col_daya < len(r)) else ""
                 
                 if idpel and nik_baru:
                     item_dict = {
@@ -155,6 +159,8 @@ def load_input_data(filepath):
                     }
                     if no_meter:
                         item_dict["no_meter"] = no_meter
+                    if daya_val:
+                        item_dict["daya"] = daya_val
                     rows.append(item_dict)
         print(f"[OK] Berhasil memuat {len(rows)} data dari '{filepath}' (delimiter: '{delim}')")
         return rows

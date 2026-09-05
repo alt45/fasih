@@ -56,6 +56,10 @@ from core.scanner import (
 from core.form_processor import (
     process_update_nik,
 )
+from core.nik_provider import (
+    FallbackNIKProvider,
+    is_daya_450,
+)
 
 
 def run_forward_mode(target_device=None, custom_csv=None):
@@ -142,16 +146,25 @@ def run_forward_mode(target_device=None, custom_csv=None):
     print("=" * 60)
 
 
-def run_reverse_mode(target_device=None, custom_csv=None, is_pasca=False):
+def run_reverse_mode(target_device=None, custom_csv=None, is_pasca=False, enable_daya_fallback=False):
     """
-    Mode 3 / 4: PENGEDITAN DATA TERBALIK (REVERSE)
-    1. Memindai seluruh nomor meter (Mode 3) atau ID Pelanggan (Mode 4 Pasca) dari HP.
-    2. Mencocokkan dengan file master (masterpasca.csv atau mastermeter.csv).
+    Mode 3 / 4 / 5: PENGEDITAN DATA TERBALIK (REVERSE)
+    1. Memindai seluruh nomor meter (Mode 3) atau ID Pelanggan (Mode 4 Pasca / Mode 5 Pasca Daya) dari HP.
+    2. Mencocokkan dengan file master (mastermeter.csv, masterpasca.csv, atau masterpascadaya.csv).
     3. Mengeksekusi pembaruan NIK hanya untuk data yang cocok (BLOK I dilewati jika pasca).
+    4. Jika enable_daya_fallback aktif, NIK yang gagal dan daya bukan 450 akan difallback ke nik.json.
     """
     target_csv = custom_csv or ""
     if not target_csv:
-        if is_pasca:
+        if enable_daya_fallback:
+            if os.path.exists("masterpascadaya.csv"):
+                print("[*] File 'masterpascadaya.csv' terdeteksi otomatis sebagai file master pasca bayar + daya.")
+                target_csv = "masterpascadaya.csv"
+            else:
+                target_csv = pilih_file_csv(judul_mode="Pengeditan NIK Pasca + Daya (Master CSV)")
+                if not target_csv:
+                    return
+        elif is_pasca:
             if os.path.exists("masterpasca.csv"):
                 print("[*] File 'masterpasca.csv' terdeteksi otomatis sebagai file master pasca bayar.")
                 target_csv = "masterpasca.csv"
@@ -171,7 +184,12 @@ def run_reverse_mode(target_device=None, custom_csv=None, is_pasca=False):
                 if not target_csv:
                     return
 
-    judul_banner = "OTOMASI PENGEDITAN NIK PASCA BAYAR (REVERSE MODE)" if is_pasca else "OTOMASI PENGEDITAN NIK TERBALIK (REVERSE MODE)"
+    if enable_daya_fallback:
+        judul_banner = "OTOMASI PENGEDITAN NIK PASCA + DAYA (MODE 5)"
+    elif is_pasca:
+        judul_banner = "OTOMASI PENGEDITAN NIK PASCA BAYAR (REVERSE MODE)"
+    else:
+        judul_banner = "OTOMASI PENGEDITAN NIK TERBALIK (REVERSE MODE)"
     print("╔══════════════════════════════════════════════════════════╗")
     print(f"║   {judul_banner:<54} ║")
     print("╠══════════════════════════════════════════════════════════╣")
@@ -255,9 +273,15 @@ def run_reverse_mode(target_device=None, custom_csv=None, is_pasca=False):
         print("[✓] Semua penugasan di HP saat ini tidak memerlukan perbaikan NIK.")
         return
 
+    # 5. Inisialisasi Fallback NIK Provider jika enable_daya_fallback aktif
+    fallback_provider = None
+    if enable_daya_fallback:
+        print("[*] Menginisialisasi penyedia Fallback NIK dari 'nik.json'...")
+        fallback_provider = FallbackNIKProvider(json_path="nik.json")
+
     print(f"[*] Memulai pemrosesan {total_cocok} data penugasan yang cocok...\n")
 
-    # 5. Eksekusi pembaruan NIK untuk data yang cocok
+    # 6. Eksekusi pembaruan NIK untuk data yang cocok
     sukses_count = 0
     idpel_tidak_ada_count = 0
     nik_tidak_ditemukan_count = 0
@@ -268,10 +292,18 @@ def run_reverse_mode(target_device=None, custom_csv=None, is_pasca=False):
         nik = item["NIK_Perbaikan"]
         meter = item.get("no_meter", "")
         meter_info = f" (No. Meter: {meter})" if meter else ""
-        print(f"\n>>> Progress Reverse: [{idx}/{total_cocok}] IDPEL: {idpel}{meter_info} <<<")
+        daya_val = item.get("daya", "")
+        daya_info = f" (Daya: {daya_val})" if daya_val else ""
+        print(f"\n>>> Progress Reverse: [{idx}/{total_cocok}] IDPEL: {idpel}{meter_info}{daya_info} <<<")
 
         try:
-            status_hasil = process_update_nik(d, item, target_csv, skip_cek_idpel=is_pasca)
+            status_hasil = process_update_nik(
+                d,
+                item,
+                target_csv,
+                skip_cek_idpel=is_pasca,
+                fallback_nik_provider=fallback_provider
+            )
             if status_hasil == "SUKSES":
                 sukses_count += 1
             elif status_hasil == "IDPEL_NOT_FOUND":
@@ -312,14 +344,17 @@ def main(custom_device=None, custom_csv=None, mode="forward"):
     )
     parser.add_argument("--device", "-d", type=str, default="", help="Serial ID perangkat Android (lihat via 'adb devices')")
     parser.add_argument("--csv", "-c", type=str, default="", help="Nama/path file CSV data perbaikan NIK")
-    parser.add_argument("--mode", "-m", type=str, default="forward", help="Pilih mode: 'forward' ('2') / 'reverse' ('3') / 'pasca' ('4')")
+    parser.add_argument("--mode", "-m", type=str, default="forward", help="Pilih mode: 'forward' ('2') / 'reverse' ('3') / 'pasca' ('4') / 'pascadaya' ('5')")
     
     args, _ = parser.parse_known_args()
     target_device = custom_device or args.device or DEVICE_ID
     target_csv = custom_csv or args.csv or ""
     selected_mode = mode or args.mode or "forward"
 
-    if selected_mode.lower() in ["reverse", "3", "terbalik", "rev"]:
+    if selected_mode.lower() in ["pascadaya", "5", "pasca_daya", "daya"]:
+        run_reverse_mode(target_device=target_device, custom_csv=target_csv, is_pasca=True, enable_daya_fallback=True)
+        return
+    elif selected_mode.lower() in ["reverse", "3", "terbalik", "rev"]:
         run_reverse_mode(target_device=target_device, custom_csv=target_csv, is_pasca=False)
         return
     elif selected_mode.lower() in ["pasca", "4", "pascabayar", "reverse_pasca"]:

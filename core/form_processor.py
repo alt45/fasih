@@ -14,12 +14,13 @@ from .ui_helpers import (
     scroll_down_small,
     is_nik_present_on_screen,
 )
+from .nik_provider import is_daya_450
 
 
-def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=False):
+def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=False, fallback_nik_provider=None):
     """
     Memproses satu baris data IDPEL:
-    Cari IDPEL -> Buka -> BLOK I (Cek IDPEL jika Prabayar / Skip jika Pasca) -> BLOK II Ganti NIK & Cek NIK -> Kirim
+    Cari IDPEL -> Buka -> BLOK I (Cek IDPEL jika Prabayar / Skip jika Pasca) -> BLOK II Ganti NIK & Cek NIK (Dukungan Fallback Daya) -> Kirim
     """
     idpel = str(row_data["id_pelanggan"]).strip()
     nik_baru = str(row_data["NIK_Perbaikan"]).strip()
@@ -392,12 +393,69 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
 
     # Jika NIK TIDAK DITEMUKAN saat pemadanan:
     if nik_match_result == "TIDAK DITEMUKAN":
+        daya = str(row_data.get("daya", "")).strip()
+        
+        # Cek apakah fallback NIK aktif dan daya pelanggan diperbolehkan untuk fallback (bukan daya 450)
+        if fallback_nik_provider is not None:
+            if is_daya_450(daya):
+                print(f"[!] IDPEL {idpel}: Daya 450 terdeteksi ('{daya}'). Sesuai aturan, TIDAK ADA fallback NIK cadangan.")
+            elif not daya:
+                print(f"[!] IDPEL {idpel}: Nilai daya kosong/tidak terdefinisi. Fallback NIK dilewati demi keamanan.")
+            else:
+                print(f"[*] IDPEL {idpel}: Daya '{daya}' (bukan daya 450). Menjalankan Fallback NIK dari nik.json...")
+                fallback_nik = fallback_nik_provider.get_next()
+                if fallback_nik:
+                    print(f"[*] Menginput Fallback NIK: {fallback_nik}...")
+                    input_nik.click()
+                    time.sleep(0.3)
+                    input_nik.clear_text()
+                    time.sleep(0.2)
+                    input_nik.set_text(fallback_nik)
+                    time.sleep(0.5)
+                    hide_keyboard(d)
+                    time.sleep(1.0)
+                    
+                    # Klik Cek NIK ulang
+                    if btn_cek_nik.exists:
+                        cx, cy = btn_cek_nik.center()
+                        print(f"[*] Mengklik 'Cek NIK' ulang di ({cx}, {cy})...")
+                        d.click(cx, cy)
+                        time.sleep(0.6)
+                        d.click(cx, cy)
+                    else:
+                        d.click(99, 935)
+                        time.sleep(0.6)
+                        d.click(99, 935)
+                    
+                    print("[*] Menunggu pemadanan Fallback NIK dari server (max 12 detik)...")
+                    for wait_fb in range(12):
+                        time.sleep(1.0)
+                        xml_chk_fb = d.dump_hierarchy()
+                        if d(textContains="TIDAK DITEMUKAN").exists or "TIDAK DITEMUKAN" in xml_chk_fb:
+                            print(f"[!] Fallback NIK {fallback_nik} detik ke-{wait_fb+1}: TIDAK DITEMUKAN!")
+                            break
+                        elif d(textContains="SESUAI").exists or "SESUAI" in xml_chk_fb or "DITEMUKAN" in xml_chk_fb:
+                            print(f"[OK] Fallback NIK {fallback_nik} detik ke-{wait_fb+1}: SESUAI / DITEMUKAN!")
+                            nik_baru = fallback_nik
+                            nik_match_result = "DITEMUKAN"
+                            break
+
+    # Jika setelah evaluasi fallback NIK tetap TIDAK DITEMUKAN:
+    if nik_match_result == "TIDAK DITEMUKAN":
+        daya = str(row_data.get("daya", "")).strip()
+        if is_daya_450(daya):
+            ket_log = f"NIK Tidak Ditemukan (Daya 450: {daya})"
+        elif fallback_nik_provider is not None and daya:
+            ket_log = f"NIK Awal & Fallback Tidak Ditemukan (Daya: {daya})"
+        else:
+            ket_log = "NIK Tidak Ditemukan saat pemadanan"
+
         print(f"[!] Pemadanan Gagal: NIK {nik_baru} untuk IDPEL {idpel} TIDAK DITEMUKAN.")
         print(f"[*] Mencatat ke '{OUT_NIK_TIDAK_DITEMUKAN}' dan menghapus dari '{csv_input_path}'...")
         append_to_log(OUT_NIK_TIDAK_DITEMUKAN, {
             "id_pelanggan": idpel,
             "NIK_Perbaikan": nik_baru,
-            "keterangan": "NIK Tidak Ditemukan saat pemadanan",
+            "keterangan": ket_log,
             "waktu": time.strftime("%Y-%m-%d %H:%M:%S")
         })
         remove_idpel_from_input_csv(csv_input_path, idpel)

@@ -39,6 +39,10 @@ from .scanner import (
 from .form_processor import (
     process_update_nik,
 )
+from .nik_provider import (
+    FallbackNIKProvider,
+    is_daya_450,
+)
 
 __all__ = [
     "DEVICE_ID",
@@ -70,4 +74,6 @@ __all__ = [
     "scan_all_assignments_from_hp",
     "scan_all_meters_from_hp",
     "process_update_nik",
+    "FallbackNIKProvider",
+    "is_daya_450",
 ]

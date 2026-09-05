@@ -25,3 +25,7 @@ master_backup.csv
 
 # Dump UI sementara
 ui_dump/
+
+# File state lokal
+.nik_fallback_state.json
+*.state.json
