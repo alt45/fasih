@@ -4,6 +4,7 @@ Digunakan untuk Fallback NIK otomatis dari berkas nik.json
 """
 import json
 import os
+import random
 import re
 
 
@@ -21,8 +22,7 @@ def is_daya_450(daya_str):
 
 class FallbackNIKProvider:
     """
-    Mengelola pengambilan NIK valid dari file nik.json secara berurutan dan persisten.
-    Menyimpan posisi indeks terakhir di berkas state agar NIK selalu bergulir unik.
+    Mengelola pengambilan NIK valid dari file nik.json secara acak atau berurutan.
     """
     def __init__(self, json_path="nik.json", state_file=".nik_fallback_state.json"):
         self.json_path = json_path
@@ -61,14 +61,25 @@ class FallbackNIKProvider:
         else:
             self.index = 0
 
-    def get_next(self):
+    def get_random(self):
         """
-        Mengambil satu NIK cadangan berikutnya secara berurutan.
-        Mengembalikan string 16-digit NIK atau None jika daftar kosong.
+        Mengambil satu NIK cadangan secara acak (random) dari daftar nik.json.
+        """
+        if not self.niks:
+            return None
+        return random.choice(self.niks)
+
+    def get_next(self, random_pick=True):
+        """
+        Mengambil satu NIK cadangan. Default mengambil secara acak (random_pick=True).
+        Jika random_pick=False, mengambil secara berurutan (*sequential*).
         """
         if not self.niks:
             return None
         
+        if random_pick:
+            return self.get_random()
+
         if self.index >= len(self.niks):
             print("[*] Catatan: Seluruh NIK di nik.json sudah digunakan sekali, merotasi kembali ke awal.")
             self.index = 0

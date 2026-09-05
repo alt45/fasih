@@ -402,10 +402,10 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
             elif not daya:
                 print(f"[!] IDPEL {idpel}: Nilai daya kosong/tidak terdefinisi. Fallback NIK dilewati demi keamanan.")
             else:
-                print(f"[*] IDPEL {idpel}: Daya '{daya}' (bukan daya 450). Menjalankan Fallback NIK dari nik.json...")
-                fallback_nik = fallback_nik_provider.get_next()
+                print(f"[*] IDPEL {idpel}: Daya '{daya}' (bukan daya 450). Menjalankan Fallback NIK acak dari nik.json (Percobaan 1x)...")
+                fallback_nik = fallback_nik_provider.get_random()
                 if fallback_nik:
-                    print(f"[*] Menginput Fallback NIK: {fallback_nik}...")
+                    print(f"[*] Menginput Fallback NIK acak: {fallback_nik}...")
                     input_nik.click()
                     time.sleep(0.3)
                     input_nik.clear_text()
@@ -427,15 +427,17 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
                         time.sleep(0.6)
                         d.click(99, 935)
                     
-                    print("[*] Menunggu pemadanan Fallback NIK dari server (max 12 detik)...")
+                    print("[*] Menunggu pemadanan Fallback NIK acak dari server (max 12 detik)...")
+                    fallback_match = "UNKNOWN"
                     for wait_fb in range(12):
                         time.sleep(1.0)
                         xml_chk_fb = d.dump_hierarchy()
                         if d(textContains="TIDAK DITEMUKAN").exists or "TIDAK DITEMUKAN" in xml_chk_fb:
-                            print(f"[!] Fallback NIK {fallback_nik} detik ke-{wait_fb+1}: TIDAK DITEMUKAN!")
+                            print(f"[!] Fallback NIK acak {fallback_nik} detik ke-{wait_fb+1}: TIDAK DITEMUKAN! Mengabaikan IDPEL ini...")
+                            fallback_match = "TIDAK DITEMUKAN"
                             break
                         elif d(textContains="SESUAI").exists or "SESUAI" in xml_chk_fb or "DITEMUKAN" in xml_chk_fb:
-                            print(f"[OK] Fallback NIK {fallback_nik} detik ke-{wait_fb+1}: SESUAI / DITEMUKAN!")
+                            print(f"[OK] Fallback NIK acak {fallback_nik} detik ke-{wait_fb+1}: SESUAI / DITEMUKAN!")
                             nik_baru = fallback_nik
                             nik_match_result = "DITEMUKAN"
                             break
