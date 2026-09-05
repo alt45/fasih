@@ -212,7 +212,9 @@ def run_reverse_mode(target_device=None, custom_csv=None, is_pasca=False, enable
         nik = str(r["NIK_Perbaikan"]).strip()
         master_by_idpel[idp] = r
         if "no_meter" in r and r["no_meter"]:
-            master_by_meter[str(r["no_meter"]).strip()] = r
+            m_val = str(r["no_meter"]).strip()
+            if len(m_val) != 16:
+                master_by_meter[m_val] = r
 
     print(f"[OK] Berhasil memuat {len(raw_data)} data master.")
     if is_pasca:

@@ -1,3 +1,4 @@
+import re
 import time
 from .config import (
     CSV_INPUT,
@@ -338,6 +339,28 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
 
     if not input_nik or not input_nik.exists:
         raise Exception("Field input NIK di BLOK II tidak ditemukan.")
+
+    # Safety Guard: Pastikan NIK yang akan diketik benar-benar 16 digit
+    clean_nik = re.sub(r'\D', '', str(nik_baru).strip())
+    if len(clean_nik) != 16:
+        print(f"[!] PERINGATAN: NIK '{nik_baru}' tidak valid ({len(clean_nik)} digit, harus 16 digit)!")
+        clean_meter = re.sub(r'\D', '', str(row_data.get("no_meter", "")).strip())
+        if len(clean_meter) == 16:
+            print(f"[✓ AUTO-FIX] Terdeteksi NIK 16 digit pada kolom No. Meter ('{clean_meter}')! Menggunakan NIK tersebut.")
+            nik_baru = clean_meter
+            clean_nik = clean_meter
+        else:
+            print(f"[X] Data NIK '{nik_baru}' bukan 16 digit dan tidak dapat diperbaiki otomatis. Melewati IDPEL ini...")
+            append_to_log(OUT_GAGAL, {
+                "id_pelanggan": idpel,
+                "NIK_Perbaikan": nik_baru,
+                "error": f"NIK tidak valid ({len(clean_nik)} digit, bukan 16 digit)",
+                "waktu": time.strftime("%Y-%m-%d %H:%M:%S")
+            })
+            remove_idpel_from_input_csv(csv_input_path, idpel)
+            back_to_assignment_list(d)
+            clear_search_box(d)
+            return "NIK_NOT_FOUND"
 
     print(f"[*] Membersihkan NIK lama dan mengetik NIK Baru (Instan): {nik_baru}...")
     input_nik.click()

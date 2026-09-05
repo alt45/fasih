@@ -1,5 +1,6 @@
 import csv
 import os
+import re
 from .config import CSV_DELIMITER
 
 
@@ -111,8 +112,48 @@ def append_to_log(filepath, data_dict):
         print(f"[!] Gagal mencatat ke log '{filepath}': {e}")
 
 
+def validate_and_fix_customer_data(idpel, no_meter, nik, line_no=None):
+    """
+    Memvalidasi dan otomatis membetulkan posisi jika IDPEL, No Meter, atau NIK tertukar.
+    Karakteristik standar:
+      - NIK      : Tepat 16 digit angka murni
+      - IDPEL    : Tepat 12 digit angka murni
+      - No. Meter: Biasanya 11 digit (token) atau 6-10 digit / '0' (pasca). Tidak pernah 16 digit.
+    """
+    clean_id = re.sub(r'\D', '', str(idpel).strip())
+    clean_meter = re.sub(r'\D', '', str(no_meter).strip())
+    clean_nik = re.sub(r'\D', '', str(nik).strip())
+
+    swapped = False
+    prefix = f"Baris {line_no}: " if line_no else ""
+
+    # Kasus 1: No. Meter dan NIK tertukar (Meter 16 digit, NIK bukan 16 digit)
+    if len(clean_meter) == 16 and len(clean_nik) != 16:
+        print(f"[⚠️ AUTO-FIX] {prefix}No. Meter ('{no_meter}') dan NIK ('{nik}') terdeteksi TERTUKAR! Posisi otomatis dibenarkan.")
+        clean_nik, clean_meter = clean_meter, clean_nik
+        swapped = True
+
+    # Kasus 2: IDPEL dan NIK tertukar (IDPEL 16 digit, NIK 12 digit)
+    elif len(clean_id) == 16 and len(clean_nik) == 12:
+        print(f"[⚠️ AUTO-FIX] {prefix}IDPEL ('{idpel}') dan NIK ('{nik}') terdeteksi TERTUKAR! Posisi otomatis dibenarkan.")
+        clean_id, clean_nik = clean_nik, clean_id
+        swapped = True
+
+    # Kasus 3: IDPEL dan No. Meter tertukar (IDPEL 11 digit, Meter 12 digit)
+    elif len(clean_id) == 11 and len(clean_meter) == 12:
+        print(f"[⚠️ AUTO-FIX] {prefix}IDPEL ('{idpel}') dan No. Meter ('{no_meter}') terdeteksi TERTUKAR! Posisi otomatis dibenarkan.")
+        clean_id, clean_meter = clean_meter, clean_id
+        swapped = True
+
+    final_id = clean_id if clean_id else str(idpel).strip()
+    final_meter = clean_meter if clean_meter else str(no_meter).strip()
+    final_nik = clean_nik if clean_nik else str(nik).strip()
+
+    return final_id, final_meter, final_nik, swapped
+
+
 def load_input_data(filepath):
-    """Membaca file CSV input dan mengembalikan list data (mendukung 2 kolom IDPEL/NIK atau 3 kolom IDPEL/Meter/NIK)."""
+    """Membaca file CSV input dan mengembalikan list data (mendukung 2 kolom IDPEL/NIK atau 3 kolom IDPEL/Meter/NIK dengan auto-fix data tertukar)."""
     if not os.path.exists(filepath):
         print(f"[X] File '{filepath}' tidak ditemukan!")
         return []
@@ -144,6 +185,7 @@ def load_input_data(filepath):
             if col_meter is not None and col_nik == 1 and col_meter == 1:
                 col_nik = 2
 
+            auto_fix_count = 0
             for line_no, r in enumerate(reader, start=2):
                 if not r or len(r) < 2:
                     continue
@@ -152,6 +194,13 @@ def load_input_data(filepath):
                 nik_baru = str(r[col_nik]).strip() if col_nik < len(r) else ""
                 daya_val = str(r[col_daya]).strip() if (col_daya is not None and col_daya < len(r)) else ""
                 
+                # Validasi dan auto-fix jika ada kolom yang posisinya tertukar
+                idpel, no_meter, nik_baru, was_swapped = validate_and_fix_customer_data(
+                    idpel, no_meter, nik_baru, line_no=line_no
+                )
+                if was_swapped:
+                    auto_fix_count += 1
+
                 if idpel and nik_baru:
                     item_dict = {
                         "id_pelanggan": idpel,
@@ -162,6 +211,9 @@ def load_input_data(filepath):
                     if daya_val:
                         item_dict["daya"] = daya_val
                     rows.append(item_dict)
+
+            if auto_fix_count > 0:
+                print(f"[✓] Terdeteksi & dibetulkan otomatis {auto_fix_count} data yang posisinya tertukar!")
         print(f"[OK] Berhasil memuat {len(rows)} data dari '{filepath}' (delimiter: '{delim}')")
         return rows
     except Exception as e:

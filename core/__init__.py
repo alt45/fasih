@@ -18,6 +18,7 @@ from .csv_utils import (
     load_input_data,
     remove_idpel_from_input_csv,
     pilih_file_csv,
+    validate_and_fix_customer_data,
 )
 from .ui_helpers import (
     is_keyboard_shown,
@@ -76,4 +77,5 @@ __all__ = [
     "process_update_nik",
     "FallbackNIKProvider",
     "is_daya_450",
+    "validate_and_fix_customer_data",
 ]
