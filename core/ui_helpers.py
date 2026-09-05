@@ -66,16 +66,30 @@ def scroll_down_small(d, duration=0.3):
 
 
 def scroll_table_up(d, swipes=15):
-    """Menggulir tabel ke baris paling awal."""
-    for _ in range(swipes):
-        d.swipe(360, 850, 360, 1450, duration=0.12)
-        time.sleep(0.05)
+    """Menggulir tabel ke baris paling awal (adaptif terhadap resolusi layar)."""
+    try:
+        w, h = d.window_size()
+        x = w // 2
+        y_start = int(h * 0.35)
+        y_end = int(h * 0.85)
+        for _ in range(swipes):
+            d.swipe(x, y_start, x, y_end, duration=0.12)
+            time.sleep(0.05)
+    except Exception as e:
+        print(f"[!] Gagal scroll table up: {e}")
 
 
 def scroll_table_down(d):
-    """Menggulir tabel ke bawah sedikit."""
-    d.swipe(360, 1350, 360, 850, duration=0.25)
-    time.sleep(0.3)
+    """Menggulir tabel ke bawah sedikit (adaptif terhadap resolusi layar)."""
+    try:
+        w, h = d.window_size()
+        x = w // 2
+        y_start = int(h * 0.80)
+        y_end = int(h * 0.40)
+        d.swipe(x, y_start, x, y_end, duration=0.25)
+        time.sleep(0.3)
+    except Exception as e:
+        print(f"[!] Gagal scroll table down: {e}")
 
 
 def is_nik_present_on_screen(d):
@@ -126,6 +140,16 @@ def back_to_assignment_list(d):
         else:
             d.click(359, 1326)
         time.sleep(2.5)
+
+    # Cek apakah dialog filter status terbuka
+    btn_tutup_filter = d(resourceId="id.go.bpsfasih:id/tutup_buttomDialogFilterAssignment")
+    if btn_tutup_filter.exists or d(text="Filter Assignment By Status").exists:
+        print("[*] Recovery: Terdeteksi dialog 'Filter Assignment By Status' aktif. Menutup filter...")
+        if btn_tutup_filter.exists:
+            btn_tutup_filter.click()
+        else:
+            d.press("back")
+        time.sleep(1.0)
 
     # Cek apakah ada tombol Batal pada dialog aktif
     btn_batal = d(text="Batal")

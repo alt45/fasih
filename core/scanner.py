@@ -21,6 +21,16 @@ def scan_all_assignments_from_hp(d, scan_by="auto"):
         if not back_to_assignment_list(d):
             raise Exception("Gagal memposisikan layar ke 'Daftar Assignment'.")
 
+    # Tutup dialog filter jika terbuka
+    btn_tutup_filter = d(resourceId="id.go.bpsfasih:id/tutup_buttomDialogFilterAssignment")
+    if btn_tutup_filter.exists or d(text="Filter Assignment By Status").exists:
+        print("[*] Menutup dialog filter status yang terbuka...")
+        if btn_tutup_filter.exists:
+            btn_tutup_filter.click()
+        else:
+            d.press("back")
+        time.sleep(1.0)
+
     clear_search_box(d)
 
     # 1. Pastikan tampilan 'Show 100 entries' aktif jika ada opsi dropdown
@@ -47,8 +57,30 @@ def scan_all_assignments_from_hp(d, scan_by="auto"):
             detected_type = "meter"
         print(f"[*] Terdeteksi tipe kolom tabel di layar: '{detected_type.upper()}'")
 
+    win_w, win_h = d.window_size()
+    x_center = win_w // 2
+    pattern_footer = r'(?:Showing|Menampilkan)\s+([0-9.,]+)\s+(?:to|sampai|hingga)\s+([0-9.,]+)\s+(?:of|dari)\s+([0-9.,]+)'
+
+    # Pastikan tabel berada di Halaman 1 sebelum mulai
+    xml_init = d.dump_hierarchy()
+    m_init = re.search(pattern_footer, xml_init, re.IGNORECASE)
+    if m_init:
+        try:
+            init_start = int(re.sub(r'[^0-9]', '', m_init.group(1)))
+            if init_start > 1:
+                print(f"[*] Tabel terdeteksi di halaman lanjutan ({m_init.group(0)}). Mengembalikan ke Halaman 1...")
+                for _ in range(15):
+                    d.swipe(x_center, int(win_h * 0.80), x_center, int(win_h * 0.35), duration=0.22)
+                    time.sleep(0.2)
+                btn_p1_init = d(text="1")
+                if btn_p1_init.exists:
+                    btn_p1_init.click()
+                    time.sleep(2.0)
+        except Exception:
+            pass
+
     # 2. Gulir ke baris paling awal
-    print("[*] Menggulir tabel ke posisi paling awal...")
+    print("[*] Menggulir tabel ke baris paling awal...")
     scroll_table_up(d, swipes=15)
 
     collected = []
@@ -113,7 +145,7 @@ def scan_all_assignments_from_hp(d, scan_by="auto"):
         # Geser ke bagian paling bawah untuk memastikan footer dan pagination controls masuk ke layar
         print("[*] Memeriksa bagian bawah halaman untuk kontrol navigasi / pagination...")
         for _ in range(3):
-            d.swipe(360, 1300, 360, 700, duration=0.25)
+            d.swipe(x_center, int(win_h * 0.85), x_center, int(win_h * 0.40), duration=0.25)
             time.sleep(0.3)
             xml_bot = d.dump_hierarchy()
             # Ambil data sisa di bagian paling bawah jika ada
@@ -141,81 +173,79 @@ def scan_all_assignments_from_hp(d, scan_by="auto"):
 
         next_page_num = current_page + 1
 
-        # Deteksi apakah tombol halaman berikutnya ada di layar
-        btn_target_page = d(text=str(next_page_num))
-        has_page_button = btn_target_page.exists
+        # Jika footer terdeteksi dan has_more_pages False, berarti sudah di halaman terakhir
+        if not has_more_pages:
+            print(f"[✓] Seluruh halaman penugasan ({current_page} halaman) selesai dipindai! Total terkumpul: {len(collected)} {unit_label}.")
+            break
 
-        if has_more_pages or has_page_button:
-            print(f"[*] Terdeteksi masih ada halaman berikutnya (Halaman {next_page_num}" + (f" dari total {total_known_entries} entri" if total_known_entries else "") + ")...")
-            
-            nav_clicked = False
-            # Strategi 1: Klik tombol nomor halaman langsung (misal "2", "3")
+        # Masih ada halaman berikutnya
+        print(f"[*] Terdeteksi masih ada halaman berikutnya (Halaman {next_page_num}" + (f" dari total {total_known_entries} entri" if total_known_entries else "") + ")...")
+        
+        nav_clicked = False
+        # Strategi 1: Klik tombol nomor halaman langsung (misal "2", "3")
+        btn_target_page = d(text=str(next_page_num))
+        if btn_target_page.exists:
+            print(f"[*] Mengklik tombol nomor Halaman '{next_page_num}'...")
+            btn_target_page.click()
+            nav_clicked = True
+        
+        # Strategi 2: Jika tombol angka tidak ada, cari tombol "Next" / "Berikutnya"
+        if not nav_clicked:
+            for nav_text in ["Next", "Berikutnya"]:
+                btn_n = d(text=nav_text)
+                if not btn_n.exists:
+                    btn_n = d(textContains=nav_text)
+                if btn_n.exists:
+                    print(f"[*] Mengklik tombol '{nav_text}' untuk ke Halaman {next_page_num}...")
+                    btn_n.click()
+                    nav_clicked = True
+                    break
+
+        # Strategi 3: Coba scroll sedikit lagi jika belum tampak
+        if not nav_clicked:
+            d.swipe(x_center, int(win_h * 0.85), x_center, int(win_h * 0.45), duration=0.25)
+            time.sleep(0.5)
+            btn_target_page = d(text=str(next_page_num))
             if btn_target_page.exists:
-                print(f"[*] Mengklik tombol nomor Halaman '{next_page_num}'...")
+                print(f"[*] Mengklik tombol nomor Halaman '{next_page_num}' setelah scroll...")
                 btn_target_page.click()
                 nav_clicked = True
-            
-            # Strategi 2: Jika tombol angka tidak ada, cari tombol "Next" / "Berikutnya"
-            if not nav_clicked:
-                for nav_text in ["Next", "Berikutnya"]:
-                    btn_n = d(text=nav_text)
-                    if not btn_n.exists:
-                        btn_n = d(textContains=nav_text)
-                    if btn_n.exists:
-                        print(f"[*] Mengklik tombol '{nav_text}' untuk ke Halaman {next_page_num}...")
-                        btn_n.click()
-                        nav_clicked = True
-                        break
-
-            # Strategi 3: Coba scroll sedikit lagi jika belum tampak
-            if not nav_clicked:
-                d.swipe(360, 1200, 360, 600, duration=0.25)
-                time.sleep(0.5)
-                btn_target_page = d(text=str(next_page_num))
-                if btn_target_page.exists:
-                    print(f"[*] Mengklik tombol nomor Halaman '{next_page_num}' setelah scroll...")
-                    btn_target_page.click()
-                    nav_clicked = True
-                else:
-                    btn_next = d(text="Next")
-                    if btn_next.exists:
-                        print(f"[*] Mengklik tombol 'Next' setelah scroll...")
-                        btn_next.click()
-                        nav_clicked = True
-
-            if nav_clicked:
-                time.sleep(2.5)
-                current_page += 1
-                if current_page > 20:
-                    print("[!] Mencapai batas maksimal 20 halaman. Pemindaian diakhiri demi keamanan.")
-                    break
             else:
-                print(f"[!] Tombol navigasi ke Halaman {next_page_num} tidak ditemukan di layar. Pemindaian diakhiri.")
+                btn_next = d(text="Next")
+                if btn_next.exists:
+                    print(f"[*] Mengklik tombol 'Next' setelah scroll...")
+                    btn_next.click()
+                    nav_clicked = True
+
+        if nav_clicked:
+            time.sleep(2.5)
+            current_page += 1
+            if current_page > 25:
+                print("[!] Mencapai batas maksimal 25 halaman. Pemindaian diakhiri demi keamanan.")
                 break
         else:
-            print(f"[✓] Seluruh halaman penugasan ({current_page} halaman) selesai dipindai!")
+            print(f"[!] Tombol navigasi ke Halaman {next_page_num} tidak ditemukan di layar. Pemindaian diakhiri.")
             break
 
     # 3. Kembalikan ke paling atas untuk persiapan eksekusi dan kembali ke halaman 1 jika multi-halaman
-    print("[*] Mengembalikan posisi tabel ke baris paling atas...")
+    print("[*] Mengembalikan posisi tabel ke Halaman 1 & baris paling atas...")
     if current_page > 1:
-        # Coba klik kembali ke Halaman 1
+        # Coba klik kembali ke Halaman 1 (posisi saat ini sudah di bawah halaman terakhir, tombol 1 tampak)
         btn_p1 = d(text="1")
         if btn_p1.exists:
             try:
                 print("[*] Mengklik kembali ke Halaman 1...")
                 btn_p1.click()
-                time.sleep(1.5)
+                time.sleep(2.0)
             except Exception:
                 pass
         else:
-            # Atau klik tombol Previous / Pertama
             for prev_txt in ["Previous", "Sebelumnya", "First", "Pertama"]:
                 btn_prev = d(text=prev_txt)
                 if btn_prev.exists:
                     try:
                         btn_prev.click()
-                        time.sleep(1.5)
+                        time.sleep(2.0)
                         break
                     except Exception:
                         pass
