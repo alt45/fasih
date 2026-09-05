@@ -402,10 +402,24 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
             elif not daya:
                 print(f"[!] IDPEL {idpel}: Nilai daya kosong/tidak terdefinisi. Fallback NIK dilewati demi keamanan.")
             else:
-                print(f"[*] IDPEL {idpel}: Daya '{daya}' (bukan daya 450). Menjalankan Fallback NIK acak dari nik.json (Percobaan 1x)...")
-                fallback_nik = fallback_nik_provider.get_random()
-                if fallback_nik:
-                    print(f"[*] Menginput Fallback NIK acak: {fallback_nik}...")
+                print(f"[*] IDPEL {idpel}: Daya '{daya}' (bukan daya 450). Menjalankan Fallback NIK acak dari nik.json (Maksimal 5x percobaan)...")
+                tried_niks = set()
+                
+                for attempt in range(1, 6):
+                    # Ambil NIK acak yang belum dicoba di putaran ini
+                    fallback_nik = None
+                    for _ in range(10):
+                        cand = fallback_nik_provider.get_random()
+                        if cand and cand not in tried_niks:
+                            fallback_nik = cand
+                            tried_niks.add(cand)
+                            break
+                    
+                    if not fallback_nik:
+                        print("[!] Tidak dapat mengambil NIK acak cadangan dari nik.json.")
+                        break
+
+                    print(f"\n[*] [Fallback {attempt}/5] Mencoba NIK acak: {fallback_nik}...")
                     input_nik.click()
                     time.sleep(0.3)
                     input_nik.clear_text()
@@ -427,20 +441,29 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
                         time.sleep(0.6)
                         d.click(99, 935)
                     
-                    print("[*] Menunggu pemadanan Fallback NIK acak dari server (max 12 detik)...")
+                    print(f"[*] Menunggu pemadanan Fallback NIK acak ke-{attempt} (max 12 detik)...")
                     fallback_match = "UNKNOWN"
                     for wait_fb in range(12):
                         time.sleep(1.0)
                         xml_chk_fb = d.dump_hierarchy()
                         if d(textContains="TIDAK DITEMUKAN").exists or "TIDAK DITEMUKAN" in xml_chk_fb:
-                            print(f"[!] Fallback NIK acak {fallback_nik} detik ke-{wait_fb+1}: TIDAK DITEMUKAN! Mengabaikan IDPEL ini...")
+                            print(f"[!] Percobaan {attempt}/5: Fallback NIK {fallback_nik} TIDAK DITEMUKAN (detik ke-{wait_fb+1}).")
                             fallback_match = "TIDAK DITEMUKAN"
                             break
                         elif d(textContains="SESUAI").exists or "SESUAI" in xml_chk_fb or "DITEMUKAN" in xml_chk_fb:
-                            print(f"[OK] Fallback NIK acak {fallback_nik} detik ke-{wait_fb+1}: SESUAI / DITEMUKAN!")
+                            print(f"[OK] Percobaan {attempt}/5: Fallback NIK {fallback_nik} SESUAI / DITEMUKAN (detik ke-{wait_fb+1})!")
                             nik_baru = fallback_nik
                             nik_match_result = "DITEMUKAN"
+                            fallback_match = "DITEMUKAN"
                             break
+                    
+                    if fallback_match == "DITEMUKAN":
+                        break
+                    else:
+                        if attempt < 5:
+                            print(f"[*] Percobaan {attempt}/5 belum cocok, bersiap mencoba NIK acak berikutnya ({attempt+1}/5)...")
+                        else:
+                            print("[!] Sudah mencoba 5 kali NIK acak dari nik.json dan seluruhnya TIDAK DITEMUKAN. Mengabaikan IDPEL ini...")
 
     # Jika setelah evaluasi fallback NIK tetap TIDAK DITEMUKAN:
     if nik_match_result == "TIDAK DITEMUKAN":
@@ -448,7 +471,7 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
         if is_daya_450(daya):
             ket_log = f"NIK Tidak Ditemukan (Daya 450: {daya})"
         elif fallback_nik_provider is not None and daya:
-            ket_log = f"NIK Awal & Fallback Tidak Ditemukan (Daya: {daya})"
+            ket_log = f"NIK Awal & 5x Fallback Acak Tidak Ditemukan (Daya: {daya})"
         else:
             ket_log = "NIK Tidak Ditemukan saat pemadanan"
 
