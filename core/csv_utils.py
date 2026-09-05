@@ -223,7 +223,7 @@ def load_input_data(filepath):
 
 def remove_idpel_from_input_csv(filepath, idpel_done):
     """Menghapus baris IDPEL yang sudah sukses dari file CSV input agar tidak diproses ulang."""
-    if not os.path.exists(filepath) or not idpel_done:
+    if not filepath or not os.path.exists(filepath) or not idpel_done:
         return
     delim = detect_delimiter(filepath)
     try:

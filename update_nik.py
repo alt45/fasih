@@ -338,6 +338,104 @@ def run_reverse_mode(target_device=None, custom_csv=None, is_pasca=False, enable
     print("=" * 65)
 
 
+def run_direct_random_mode(target_device=None):
+    """
+    Mode 6: OTOMASI PENGEDITAN NIK PASCA DIRECT HP (RANDOM NIK.JSON)
+    1. Memindai seluruh penugasan ID Pelanggan langsung dari HP (mendukung multi-page jika >100 item).
+    2. Melewati BLOK I (Cek ID Pelanggan di-skip langsung ke BLOK II).
+    3. Di BLOK II langsung mengisi NIK acak dari nik.json.
+    4. Cek NIK dan coba hingga maksimal 5 kali acak jika tidak ditemukan. Jika gagal, abaikan.
+    """
+    print("╔══════════════════════════════════════════════════════════╗")
+    print("║  OTOMASI PENGEDITAN NIK DIRECT HP (MODE 6 - RANDOM)     ║")
+    print("╠══════════════════════════════════════════════════════════╣")
+    print("║  Sumber Data : Scan Langsung dari HP (Multi-Halaman)     ║")
+    print("║  Sumber NIK  : nik.json (Acak Maksimal 5x Percobaan)     ║")
+    print("║  Target Blok : Lewati BLOK I -> Langsung BLOK II         ║")
+    if target_device:
+        print(f"║  Device ID   : {target_device:<41} ║")
+    print("╚══════════════════════════════════════════════════════════╝\n")
+
+    # 1. Inisialisasi NIK Provider
+    fallback_provider = FallbackNIKProvider("nik.json")
+    if len(fallback_provider) == 0:
+        print("[X] File 'nik.json' kosong atau tidak ditemukan! Program berhenti.")
+        return
+
+    # 2. Hubungkan ke Perangkat Android
+    d = connect_device(target_device)
+    if not d:
+        return
+
+    package_name = "id.go.bpsfasih"
+    print(f"[*] Memastikan aplikasi '{package_name}' aktif di layar...")
+    d.app_start(package_name)
+    time.sleep(2.0)
+
+    # 3. Pindai seluruh penugasan dari HP (mendukung multi-page >100 item)
+    scanned_idpels = scan_all_assignments_from_hp(d, scan_by="idpel")
+    if not scanned_idpels:
+        print("[!] Tidak ada ID Pelanggan yang berhasil discan dari HP. Program berhenti.")
+        return
+
+    total_data = len(scanned_idpels)
+    print(f"\n[*] Memulai eksekusi {total_data} penugasan hasil scan HP dengan NIK acak...\n")
+
+    sukses_count = 0
+    idpel_tidak_ada_count = 0
+    nik_tidak_ditemukan_count = 0
+    gagal_count = 0
+
+    for idx, idpel in enumerate(scanned_idpels, start=1):
+        # Ambil 1 NIK acak untuk input pertama
+        first_nik = fallback_provider.get_random()
+        item = {
+            "id_pelanggan": idpel,
+            "NIK_Perbaikan": first_nik,
+            "daya": "1300"  # Set non-450 agar fallback 5x acak aktif jika NIK pertama tidak ditemukan
+        }
+        print(f"\n>>> Progress Direct Mode 6: [{idx}/{total_data}] IDPEL: {idpel} <<<")
+
+        try:
+            status_hasil = process_update_nik(
+                d,
+                item,
+                csv_input_path=None,
+                skip_cek_idpel=True,
+                fallback_nik_provider=fallback_provider
+            )
+            if status_hasil == "SUKSES":
+                sukses_count += 1
+            elif status_hasil == "IDPEL_NOT_FOUND":
+                idpel_tidak_ada_count += 1
+            elif status_hasil == "NIK_NOT_FOUND":
+                nik_tidak_ditemukan_count += 1
+            else:
+                idpel_tidak_ada_count += 1
+        except Exception as e:
+            print(f"[X] Gagal memproses IDPEL {idpel}: {e}")
+            gagal_count += 1
+            append_to_log(OUT_GAGAL, {
+                "id_pelanggan": idpel,
+                "NIK_Perbaikan": first_nik,
+                "error": str(e),
+                "waktu": time.strftime("%Y-%m-%d %H:%M:%S")
+            })
+            back_to_assignment_list(d)
+            clear_search_box(d)
+            time.sleep(2.0)
+
+    print("\n" + "=" * 65)
+    print("             PEMROSESAN DIRECT MODE 6 SELESAI!")
+    print("=" * 65)
+    print(f"  - Total Penugasan HP    : {total_data}")
+    print(f"  - Berhasil Diupdate     : {sukses_count} (Cek: '{OUT_SUKSES}')")
+    print(f"  - IDPEL Tidak Ditemukan : {idpel_tidak_ada_count} (Cek: '{OUT_TIDAK_DITEMUKAN}')")
+    print(f"  - NIK Gagal / 5x Acak   : {nik_tidak_ditemukan_count} (Cek: '{OUT_NIK_TIDAK_DITEMUKAN}')")
+    print(f"  - Gagal / Galat         : {gagal_count} (Cek: '{OUT_GAGAL}')")
+    print("=" * 65)
+
+
 def main(custom_device=None, custom_csv=None, mode="forward"):
     # Parsing CLI arguments jika dipanggil dari terminal
     parser = argparse.ArgumentParser(
@@ -346,14 +444,17 @@ def main(custom_device=None, custom_csv=None, mode="forward"):
     )
     parser.add_argument("--device", "-d", type=str, default="", help="Serial ID perangkat Android (lihat via 'adb devices')")
     parser.add_argument("--csv", "-c", type=str, default="", help="Nama/path file CSV data perbaikan NIK")
-    parser.add_argument("--mode", "-m", type=str, default="forward", help="Pilih mode: 'forward' ('2') / 'reverse' ('3') / 'pasca' ('4') / 'pascadaya' ('5')")
+    parser.add_argument("--mode", "-m", type=str, default="forward", help="Pilih mode: 'forward' ('2') / 'reverse' ('3') / 'pasca' ('4') / 'pascadaya' ('5') / 'direct' ('6')")
     
     args, _ = parser.parse_known_args()
     target_device = custom_device or args.device or DEVICE_ID
     target_csv = custom_csv or args.csv or ""
     selected_mode = mode or args.mode or "forward"
 
-    if selected_mode.lower() in ["pascadaya", "5", "pasca_daya", "daya"]:
+    if selected_mode.lower() in ["direct", "6", "pascarandom", "hp_random", "random"]:
+        run_direct_random_mode(target_device=target_device)
+        return
+    elif selected_mode.lower() in ["pascadaya", "5", "pasca_daya", "daya"]:
         run_reverse_mode(target_device=target_device, custom_csv=target_csv, is_pasca=True, enable_daya_fallback=True)
         return
     elif selected_mode.lower() in ["reverse", "3", "terbalik", "rev"]:

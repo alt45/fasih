@@ -1377,13 +1377,18 @@ def pilih_mode():
     print("║        Lewati BLOK I, NIK tidak cocok & bukan daya 450   ║")
     print("║        akan otomatis difallback ke NIK dari nik.json     ║")
     print("║                                                          ║")
+    print("║   [6]  PASCA BAYAR DIRECT HP (Acak nik.json Tanpa CSV)   ║")
+    print("║        Scan semua IDPEL di HP (Multi-page >100 item)     ║")
+    print("║        Lewati BLOK I, isi NIK acak dari nik.json         ║")
+    print("║        Maksimal 5x coba acak jika tidak ditemukan        ║")
+    print("║                                                          ║")
     print("║   [0]  KELUAR                                            ║")
     print("║                                                          ║")
     print("╚══════════════════════════════════════════════════════════╝")
     print()
 
     while True:
-        pilihan = input("   Masukkan pilihan Anda [1/2/3/4/5/0]: ").strip()
+        pilihan = input("   Masukkan pilihan Anda [1/2/3/4/5/6/0]: ").strip()
         if pilihan == "1":
             print()
             print("[✓] Mode dipilih: PENAMBAHAN DATA BARU")
@@ -1406,12 +1411,16 @@ def pilih_mode():
             print()
             print("[*] Mode dipilih: PASCA BAYAR + DAYA & FALLBACK NIK (nik.json)")
             return "pascadaya"
+        elif pilihan == "6":
+            print()
+            print("[*] Mode dipilih: PASCA BAYAR DIRECT HP (Acak nik.json Tanpa CSV)")
+            return "direct"
         elif pilihan == "0":
             print()
             print("[*] Program dihentikan oleh pengguna.")
             return None
         else:
-            print("   [⚠️] Pilihan tidak valid. Silakan masukkan 1, 2, 3, 4, 5, atau 0.")
+            print("   [⚠️] Pilihan tidak valid. Silakan masukkan 1, 2, 3, 4, 5, 6, atau 0.")
 
 
 if __name__ == "__main__":
@@ -1419,7 +1428,7 @@ if __name__ == "__main__":
         description="Skrip Otomasi Fasih BPS - Penambahan & Perbaikan Data",
         formatter_class=argparse.RawTextHelpFormatter
     )
-    parser.add_argument("--mode", "-m", type=str, default="", help="Pilih mode: 'tambah' ('1') / 'edit' ('2') / 'reverse' ('3') / 'pasca' ('4') / 'pascadaya' ('5')")
+    parser.add_argument("--mode", "-m", type=str, default="", help="Pilih mode: 'tambah' ('1') / 'edit' ('2') / 'reverse' ('3') / 'pasca' ('4') / 'pascadaya' ('5') / 'direct' ('6')")
     parser.add_argument("--device", "-d", type=str, default="", help="Serial ID perangkat Android (lihat via 'adb devices')")
     parser.add_argument("--csv", "-c", type=str, default="", help="Nama/path file CSV data")
     args, _ = parser.parse_known_args()
@@ -1442,6 +1451,8 @@ if __name__ == "__main__":
                 mode = "pasca"
             elif m_lower in ["5", "pascadaya", "pasca_daya", "daya"]:
                 mode = "pascadaya"
+            elif m_lower in ["6", "direct", "hp_random", "pascarandom", "random"]:
+                mode = "direct"
             else:
                 print(f"[!] Mode '{args.mode}' tidak dikenali. Menampilkan menu pilihan...")
                 mode = pilih_mode()
@@ -1521,4 +1532,11 @@ if __name__ == "__main__":
                 update_nik.run_reverse_mode(target_device=target_device, custom_csv=target_csv, is_pasca=True, enable_daya_fallback=True)
             except Exception as err:
                 print(f"[X] Gagal menjalankan mode pasca daya: {err}")
+            break
+        elif mode == "direct":
+            try:
+                import update_nik
+                update_nik.run_direct_random_mode(target_device=target_device)
+            except Exception as err:
+                print(f"[X] Gagal menjalankan mode direct random: {err}")
             break

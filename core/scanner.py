@@ -51,41 +51,95 @@ def scan_all_assignments_from_hp(d, scan_by="auto"):
 
     collected = []
     unit_label = "ID Pelanggan" if detected_type == "idpel" else "Nomor Meter"
-    print(f"[*] Memulai pemindaian {unit_label} dari baris 1 sampai tuntas...")
+    print(f"[*] Memulai pemindaian {unit_label} dari tabel penugasan...")
 
-    consecutive_no_new = 0
-    for step in range(35):
-        xml = d.dump_hierarchy()
-        if detected_type == "idpel":
-            found_plus = re.findall(r'\+\s*(\d{12})', xml)
-            found_all = [x for x in re.findall(r'\b\d{12}\b', xml) if not x.startswith("0000")]
-            found = found_plus if found_plus else found_all
-        else:
-            found = re.findall(r'\b\d{11}\b', xml)
+    current_page = 1
+    total_known_entries = None
 
-        new_in_step = 0
-        for item in found:
-            if item not in collected:
-                collected.append(item)
-                new_in_step += 1
+    while True:
+        print(f"\n[*] --- Memindai Halaman {current_page} ({unit_label}) ---")
+        # Pastikan di baris paling awal halaman saat ini
+        scroll_table_up(d, swipes=15)
+        time.sleep(0.5)
 
-        m_footer = re.search(r'Showing\s+(\d+)\s+to\s+(\d+)\s+of\s+(\d+)\s+entries', xml)
-        footer_text = m_footer.group(0) if m_footer else "-"
+        consecutive_no_new = 0
+        last_footer_text = ""
+        has_more_pages = False
 
-        print(f"    [Pindai Step {step+1:2d}] +{new_in_step:2d} {unit_label} baru (Total: {len(collected):2d}) | {footer_text}")
+        for step in range(35):
+            xml = d.dump_hierarchy()
+            if detected_type == "idpel":
+                found_plus = re.findall(r'\+\s*(\d{12})', xml)
+                found_all = [x for x in re.findall(r'\b\d{12}\b', xml) if not x.startswith("0000")]
+                found = found_plus if found_plus else found_all
+            else:
+                found = re.findall(r'\b\d{11}\b', xml)
 
-        if new_in_step == 0:
-            consecutive_no_new += 1
-            if consecutive_no_new >= 3:
-                print(f"[✓] Mencapai akhir tabel. Selesai memindai!")
+            new_in_step = 0
+            for item in found:
+                if item not in collected:
+                    collected.append(item)
+                    new_in_step += 1
+
+            m_footer = re.search(r'Showing\s+(\d+)\s+to\s+(\d+)\s+of\s+(\d+)\s+entries', xml)
+            if m_footer:
+                start_ent = int(m_footer.group(1))
+                end_ent = int(m_footer.group(2))
+                tot_ent = int(m_footer.group(3))
+                total_known_entries = tot_ent
+                last_footer_text = m_footer.group(0)
+                if end_ent < tot_ent:
+                    has_more_pages = True
+                else:
+                    has_more_pages = False
+
+            footer_disp = last_footer_text if last_footer_text else "-"
+            print(f"    [Hal {current_page} Step {step+1:2d}] +{new_in_step:2d} {unit_label} baru (Total Terkumpul: {len(collected):2d}) | {footer_disp}")
+
+            if new_in_step == 0:
+                consecutive_no_new += 1
+                if consecutive_no_new >= 3:
+                    print(f"[✓] Mencapai bagian bawah tabel pada Halaman {current_page}.")
+                    break
+            else:
+                consecutive_no_new = 0
+
+            scroll_table_down(d)
+
+        # Cek apakah ada halaman berikutnya
+        if has_more_pages:
+            next_page_num = current_page + 1
+            print(f"[*] Terdeteksi masih ada halaman berikutnya (Total: {total_known_entries} data). Menavigasi ke Halaman {next_page_num}...")
+            
+            btn_next = d(text="Next")
+            if not btn_next.exists:
+                btn_next = d(text=str(next_page_num))
+            if not btn_next.exists:
+                btn_next = d(textContains="Next")
+            if not btn_next.exists:
+                btn_next = d(textContains="Berikutnya")
+
+            if btn_next.exists:
+                print(f"[*] Mengklik tombol navigasi ke Halaman {next_page_num}...")
+                btn_next.click()
+                time.sleep(2.5)
+                current_page += 1
+            else:
+                print(f"[!] Tombol navigasi ke Halaman {next_page_num} tidak ditemukan di layar. Pemindaian berhenti.")
                 break
         else:
-            consecutive_no_new = 0
+            print(f"[✓] Seluruh halaman penugasan ({current_page} halaman) selesai dipindai!")
+            break
 
-        scroll_table_down(d)
-
-    # 3. Kembalikan ke paling atas untuk persiapan eksekusi
+    # 3. Kembalikan ke paling atas untuk persiapan eksekusi dan kembali ke halaman 1 jika multi-halaman
     print("[*] Mengembalikan posisi tabel ke baris paling atas...")
+    btn_p1 = d(text="1")
+    if btn_p1.exists and current_page > 1:
+        try:
+            btn_p1.click()
+            time.sleep(1.5)
+        except Exception:
+            pass
     scroll_table_up(d, swipes=15)
 
     print(f"[✓] Berhasil mengumpulkan {len(collected)} {unit_label} unik dari HP.")
