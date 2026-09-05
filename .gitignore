@@ -2,6 +2,7 @@
 venv/
 .venv/
 env/
+re_fasih
 
 # Python cache & compiled files
 __pycache__/
