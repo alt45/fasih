@@ -565,21 +565,32 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
 
     print("[*] Menunggu proses upload & submit ke server selesai (muncul tombol OK)...")
     btn_ok_final = d(resourceId="id.go.bpsfasih:id/btn_submit_progress_close")
-    for wait_ok in range(30):
-        if btn_ok_final.exists or d(text="OK").exists:
-            print(f"[OK] Submit server selesai (detik ke-{wait_ok+1})!")
-            break
+    submit_done = False
+    for wait_ok in range(75):
+        if btn_ok_final.exists or d(text="OK").exists or d(textContains="Cek status final di Halaman Upload").exists:
+            # Pastikan teks OK sudah muncul
+            if d(text="OK").exists:
+                print(f"[OK] Submit server selesai (detik ke-{wait_ok+1})!")
+                submit_done = True
+                break
         time.sleep(1.0)
 
-    # Klik tombol OK
-    if btn_ok_final.exists:
-        btn_ok_final.click()
-    elif d(text="OK").exists:
-        d(text="OK").click()
-    else:
-        print("[*] Fallback: Mengklik koordinat tombol OK (351, 1318)...")
-        d.click(351, 1318)
-    time.sleep(2.5)
+    # Klik tombol OK dengan verifikasi penutupan dialog
+    for click_attempt in range(3):
+        if btn_ok_final.exists:
+            btn_ok_final.click()
+        elif d(text="OK").exists:
+            d(text="OK").click()
+        else:
+            print("[*] Fallback: Mengklik koordinat tombol OK (359, 1326)...")
+            d.click(359, 1326)
+        time.sleep(1.5)
+        # Jika dialog 'Submit diproses' sudah hilang, selesai
+        if not (d(text="Submit diproses").exists or d(text="OK").exists):
+            print("[OK] Dialog 'Submit diproses' berhasil ditutup.")
+            break
+        print(f"[*] Percobaan {click_attempt+1}: Dialog submit masih ada, mencoba klik tombol OK lagi...")
+        time.sleep(1.0)
 
     # 13. Deteksi Layar Tujuan Setelah Submit Selesai (Halaman Upload vs Daftar Assignment)
     print("[*] Memeriksa layar tujuan setelah submit (Halaman Upload atau Daftar Assignment)...")

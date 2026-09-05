@@ -117,6 +117,16 @@ def back_to_assignment_list(d):
     print("[*] Melakukan recovery kembali ke halaman Daftar Assignment...")
     hide_keyboard(d)
     
+    # Cek apakah layar sedang tertahan di dialog 'Submit diproses' (tombol 'OK')
+    if d(text="Submit diproses").exists or d(text="OK").exists or d(textContains="Cek status final di Halaman Upload").exists:
+        print("[*] Recovery: Terdeteksi dialog 'Submit diproses' / tombol 'OK' aktif. Mengklik 'OK'...")
+        btn_ok = d(text="OK")
+        if btn_ok.exists:
+            btn_ok.click()
+        else:
+            d.click(359, 1326)
+        time.sleep(2.5)
+
     # Cek apakah ada tombol Batal pada dialog aktif
     btn_batal = d(text="Batal")
     if btn_batal.exists:
@@ -125,6 +135,16 @@ def back_to_assignment_list(d):
 
     # Cek tombol keluar form
     for _ in range(5):
+        # Cek lagi jika dialog 'Submit diproses' masih muncul di loop
+        if d(text="Submit diproses").exists or d(text="OK").exists:
+            print("[*] Recovery loop: Mengklik tombol 'OK' dialog submit...")
+            if d(text="OK").exists:
+                d(text="OK").click()
+            else:
+                d.click(359, 1326)
+            time.sleep(2.0)
+            continue
+
         # Jika ada loading progress, tunggu sebentar
         if d(resourceId="id.go.bpsfasih:id/card_progress").exists:
             time.sleep(2.0)
