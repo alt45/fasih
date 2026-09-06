@@ -563,38 +563,70 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
     else:
         d.click(519, 1385)
 
-    print("[*] Menunggu proses upload & submit ke server selesai (muncul tombol OK atau Halaman Upload)...")
-    btn_ok_final = d(resourceId="id.go.bpsfasih:id/btn_submit_progress_close")
+    print("[*] Menunggu proses upload & submit ke server selesai (muncul tombol OK/Tutup atau Halaman Upload)...")
+    btn_close_submit = d(resourceId="id.go.bpsfasih:id/btn_submit_progress_close")
     submit_done = False
     for wait_ok in range(75):
-        # Jika langsung masuk ke Halaman Upload tanpa pop-up OK
+        # 1. Jika langsung masuk ke Halaman Upload tanpa dialog
         if d(text="Halaman Upload").exists or d(resourceId="id.go.bpsfasih:id/btn_check_status_bulk").exists:
             print(f"[OK] Submit selesai, terdeteksi langsung beralih ke Halaman Upload (detik ke-{wait_ok+1})!")
             submit_done = True
             break
-        if btn_ok_final.exists or d(text="OK").exists or d(textContains="Cek status final di Halaman Upload").exists:
-            if d(text="OK").exists:
-                print(f"[OK] Submit server selesai (detik ke-{wait_ok+1})!")
-                submit_done = True
-                break
+
+        # 2. Jika tombol penutup dialog submit (OK / Tutup) sudah muncul
+        if (
+            btn_close_submit.exists
+            or d(text="OK").exists
+            or d(text="Tutup").exists
+            or d(text="TUTUP").exists
+            or d(textContains="Cek status final di Halaman Upload").exists
+        ):
+            btn_label = "OK/Tutup"
+            if btn_close_submit.exists:
+                btn_label = btn_close_submit.info.get("text", "Tutup")
+            elif d(text="OK").exists:
+                btn_label = "OK"
+            elif d(text="Tutup").exists:
+                btn_label = "Tutup"
+
+            print(f"[OK] Proses submit selesai, tombol '{btn_label}' terdeteksi (detik ke-{wait_ok+1})!")
+            submit_done = True
+            break
+
+        # Tampilkan status upload berkala setiap 5 detik
+        if (wait_ok + 1) % 5 == 0:
+            progress_txt = ""
+            tv_detail = d(resourceId="id.go.bpsfasih:id/tv_submit_progress_detail")
+            if tv_detail.exists:
+                progress_txt = f" - {tv_detail.info.get('text', '')}"
+            print(f"[*] Masih memproses upload ke server ({wait_ok+1}s){progress_txt}...")
+
         time.sleep(1.0)
 
-    # Klik tombol OK dengan verifikasi penutupan dialog jika dialog OK muncul
+    # Klik tombol penutup dialog (OK / Tutup) jika dialog muncul
     if not (d(text="Halaman Upload").exists or d(resourceId="id.go.bpsfasih:id/btn_check_status_bulk").exists):
         for click_attempt in range(3):
-            if btn_ok_final.exists:
-                btn_ok_final.click()
+            if btn_close_submit.exists:
+                btn_close_submit.click()
             elif d(text="OK").exists:
                 d(text="OK").click()
+            elif d(text="Tutup").exists:
+                d(text="Tutup").click()
+            elif d(text="TUTUP").exists:
+                d(text="TUTUP").click()
             else:
                 w_dev, h_dev = d.window_size()
                 d.click(w_dev // 2, int(h_dev * 0.83))
             time.sleep(1.5)
-            # Jika dialog 'Submit diproses' sudah hilang, selesai
-            if not (d(text="Submit diproses").exists or d(text="OK").exists):
-                print("[OK] Dialog 'Submit diproses' berhasil ditutup.")
+            # Jika dialog progress submit sudah hilang atau masuk Halaman Upload/Daftar Assignment, selesai
+            if not (
+                d(resourceId="id.go.bpsfasih:id/btn_submit_progress_close").exists
+                or d(text="Submit diproses").exists
+                or d(text="Mengunggah berkas assignment").exists
+                or d(text="Upload gagal").exists
+            ):
+                print("[OK] Dialog progres submit berhasil ditutup.")
                 break
-            print(f"[*] Percobaan {click_attempt+1}: Dialog submit masih ada, mencoba klik tombol OK lagi...")
             time.sleep(1.0)
 
     # 13. Deteksi Layar Tujuan Setelah Submit Selesai (Halaman Upload vs Daftar Assignment)
