@@ -31,3 +31,5 @@ ui_dump/
 *.state.json
 
 scratch/
+logs/
+*.png

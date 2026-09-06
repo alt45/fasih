@@ -2,6 +2,7 @@ import csv
 import os
 import time
 import uiautomator2 as u2
+from core.logger import setup_logger
 
 # ================== KONFIGURASI UTAMA ==================
 DEVICE_ID = "RR8N60CWMLZ"  # Serial HP/Emulator Anda
@@ -170,4 +171,5 @@ def main():
     print("==========================================================")
 
 if __name__ == "__main__":
+    setup_logger(process_name="cek_idpel")
     main()

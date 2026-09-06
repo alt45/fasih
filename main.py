@@ -1424,6 +1424,9 @@ def pilih_mode():
 
 
 if __name__ == "__main__":
+    from core.logger import setup_logger
+    setup_logger(process_name="main")
+
     parser = argparse.ArgumentParser(
         description="Skrip Otomasi Fasih BPS - Penambahan & Perbaikan Data",
         formatter_class=argparse.RawTextHelpFormatter

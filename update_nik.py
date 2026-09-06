@@ -15,6 +15,7 @@ if sys.platform == "win32":
         pass
 
 # Re-export semua modul core untuk menjaga 100% backward-compatibility
+from core.logger import setup_logger
 from core.config import (
     DEVICE_ID,
     CSV_INPUT,
@@ -437,6 +438,7 @@ def run_direct_random_mode(target_device=None):
 
 
 def main(custom_device=None, custom_csv=None, mode="forward"):
+    setup_logger(process_name="update_nik")
     # Parsing CLI arguments jika dipanggil dari terminal
     parser = argparse.ArgumentParser(
         description="Otomasi Perbaikan Data NIK - Fasih BPS",
