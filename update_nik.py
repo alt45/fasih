@@ -60,6 +60,7 @@ from core.form_processor import (
 from core.nik_provider import (
     FallbackNIKProvider,
     is_daya_450,
+    pilih_file_json,
 )
 
 
@@ -339,28 +340,36 @@ def run_reverse_mode(target_device=None, custom_csv=None, is_pasca=False, enable
     print("=" * 65)
 
 
-def run_direct_random_mode(target_device=None):
+def run_direct_random_mode(target_device=None, custom_json=None):
     """
     Mode 6: OTOMASI PENGEDITAN NIK PASCA DIRECT HP (RANDOM NIK.JSON)
     1. Memindai seluruh penugasan ID Pelanggan langsung dari HP (mendukung multi-page jika >100 item).
     2. Melewati BLOK I (Cek ID Pelanggan di-skip langsung ke BLOK II).
-    3. Di BLOK II langsung mengisi NIK acak dari nik.json.
-    4. Cek NIK dan coba hingga maksimal 5 kali acak jika tidak ditemukan. Jika gagal, abaikan.
+    3. Di BLOK II langsung mengisi NIK acak dari file JSON.
+    4. Cek NIK dan coba hingga maksimal 5 kali acak jika tidak ditemukan.
+       - NIK TIDAK DITEMUKAN -> Dihapus dari stok JSON dan disimpan ke nik_invalid.json
+       - NIK SESUAI & TERPAKAI -> Dihapus dari stok JSON dan dicatat ke nik_valid.json
     """
+    target_json = custom_json or ""
+    if not target_json:
+        target_json = pilih_file_json(judul_mode="Direct HP (Random NIK)")
+        if not target_json:
+            return
+
     print("╔══════════════════════════════════════════════════════════╗")
     print("║  OTOMASI PENGEDITAN NIK DIRECT HP (MODE 6 - RANDOM)     ║")
     print("╠══════════════════════════════════════════════════════════╣")
     print("║  Sumber Data : Scan Langsung dari HP (Multi-Halaman)     ║")
-    print("║  Sumber NIK  : nik.json (Acak Maksimal 5x Percobaan)     ║")
+    print(f"║  Sumber NIK  : {target_json:<41} ║")
     print("║  Target Blok : Lewati BLOK I -> Langsung BLOK II         ║")
     if target_device:
         print(f"║  Device ID   : {target_device:<41} ║")
     print("╚══════════════════════════════════════════════════════════╝\n")
 
     # 1. Inisialisasi NIK Provider
-    fallback_provider = FallbackNIKProvider("nik.json")
+    fallback_provider = FallbackNIKProvider(target_json)
     if len(fallback_provider) == 0:
-        print("[X] File 'nik.json' kosong atau tidak ditemukan! Program berhenti.")
+        print(f"[X] File '{target_json}' kosong atau tidak ditemukan! Program berhenti.")
         return
 
     # 2. Hubungkan ke Perangkat Android
@@ -437,7 +446,7 @@ def run_direct_random_mode(target_device=None):
     print("=" * 65)
 
 
-def main(custom_device=None, custom_csv=None, mode="forward"):
+def main(custom_device=None, custom_csv=None, mode="forward", custom_json=None):
     setup_logger(process_name="update_nik")
     # Parsing CLI arguments jika dipanggil dari terminal
     parser = argparse.ArgumentParser(
@@ -446,15 +455,17 @@ def main(custom_device=None, custom_csv=None, mode="forward"):
     )
     parser.add_argument("--device", "-d", type=str, default="", help="Serial ID perangkat Android (lihat via 'adb devices')")
     parser.add_argument("--csv", "-c", type=str, default="", help="Nama/path file CSV data perbaikan NIK")
+    parser.add_argument("--json", "-j", type=str, default="", help="Nama/path file JSON stok NIK (default: nik.json)")
     parser.add_argument("--mode", "-m", type=str, default="forward", help="Pilih mode: 'forward' ('2') / 'reverse' ('3') / 'pasca' ('4') / 'pascadaya' ('5') / 'direct' ('6')")
     
     args, _ = parser.parse_known_args()
     target_device = custom_device or args.device or DEVICE_ID
     target_csv = custom_csv or args.csv or ""
+    target_json = custom_json or getattr(args, "json", "") or ""
     selected_mode = mode or args.mode or "forward"
 
     if selected_mode.lower() in ["direct", "6", "pascarandom", "hp_random", "random"]:
-        run_direct_random_mode(target_device=target_device)
+        run_direct_random_mode(target_device=target_device, custom_json=target_json)
         return
     elif selected_mode.lower() in ["pascadaya", "5", "pasca_daya", "daya"]:
         run_reverse_mode(target_device=target_device, custom_csv=target_csv, is_pasca=True, enable_daya_fallback=True)

@@ -43,6 +43,7 @@ from .form_processor import (
 from .nik_provider import (
     FallbackNIKProvider,
     is_daya_450,
+    pilih_file_json,
 )
 from .logger import (
     setup_logger,
@@ -82,6 +83,7 @@ __all__ = [
     "process_update_nik",
     "FallbackNIKProvider",
     "is_daya_450",
+    "pilih_file_json",
     "validate_and_fix_customer_data",
     "setup_logger",
     "get_current_log_path",

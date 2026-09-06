@@ -436,6 +436,10 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
     # Jika NIK TIDAK DITEMUKAN saat pemadanan:
     if nik_match_result == "TIDAK DITEMUKAN":
         daya = str(row_data.get("daya", "")).strip()
+
+        # Jika NIK awal berasal dari provider (misal Mode 6), hapus dari stok dan arsipkan
+        if fallback_nik_provider is not None:
+            fallback_nik_provider.record_invalid(nik_baru, reason="TIDAK DITEMUKAN")
         
         # Cek apakah fallback NIK aktif dan daya pelanggan diperbolehkan untuk fallback (bukan daya 450)
         if fallback_nik_provider is not None:
@@ -444,7 +448,8 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
             elif not daya:
                 print(f"[!] IDPEL {idpel}: Nilai daya kosong/tidak terdefinisi. Fallback NIK dilewati demi keamanan.")
             else:
-                print(f"[*] IDPEL {idpel}: Daya '{daya}' (bukan daya 450). Menjalankan Fallback NIK acak dari nik.json (Maksimal 5x percobaan)...")
+                json_name = os.path.basename(fallback_nik_provider.json_path)
+                print(f"[*] IDPEL {idpel}: Daya '{daya}' (bukan daya 450). Menjalankan Fallback NIK acak dari {json_name} (Maksimal 5x percobaan)...")
                 tried_niks = set()
                 
                 for attempt in range(1, 6):
@@ -458,7 +463,7 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
                             break
                     
                     if not fallback_nik:
-                        print("[!] Tidak dapat mengambil NIK acak cadangan dari nik.json.")
+                        print(f"[!] Tidak dapat mengambil NIK acak cadangan dari {json_name}.")
                         break
 
                     print(f"\n[*] [Fallback {attempt}/5] Mencoba NIK acak: {fallback_nik}...")
@@ -491,6 +496,8 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
                         if d(textContains="TIDAK DITEMUKAN").exists or "TIDAK DITEMUKAN" in xml_chk_fb:
                             print(f"[!] Percobaan {attempt}/5: Fallback NIK {fallback_nik} TIDAK DITEMUKAN (detik ke-{wait_fb+1}).")
                             fallback_match = "TIDAK DITEMUKAN"
+                            # Hapus dari stok NIK aktif & arsipkan ke nik_invalid.json
+                            fallback_nik_provider.record_invalid(fallback_nik, reason="TIDAK DITEMUKAN")
                             break
                         elif d(textContains="SESUAI").exists or "SESUAI" in xml_chk_fb or "DITEMUKAN" in xml_chk_fb:
                             print(f"[OK] Percobaan {attempt}/5: Fallback NIK {fallback_nik} SESUAI / DITEMUKAN (detik ke-{wait_fb+1})!")
@@ -505,7 +512,7 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
                         if attempt < 5:
                             print(f"[*] Percobaan {attempt}/5 belum cocok, bersiap mencoba NIK acak berikutnya ({attempt+1}/5)...")
                         else:
-                            print("[!] Sudah mencoba 5 kali NIK acak dari nik.json dan seluruhnya TIDAK DITEMUKAN. Mengabaikan IDPEL ini...")
+                            print(f"[!] Sudah mencoba 5 kali NIK acak dari {json_name} dan seluruhnya TIDAK DITEMUKAN. Mengabaikan IDPEL ini...")
 
     # Jika setelah evaluasi fallback NIK tetap TIDAK DITEMUKAN:
     if nik_match_result == "TIDAK DITEMUKAN":
@@ -806,5 +813,10 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
     
     # Hapus dari CSV input
     remove_idpel_from_input_csv(csv_input_path, idpel)
+
+    # Catat NIK valid & terpakai ke nik_valid.json dan hapus dari file stok JSON
+    if fallback_nik_provider is not None:
+        fallback_nik_provider.record_valid(nik_baru, idpel=idpel)
+
     clear_search_box(d)
     return "SUKSES"
