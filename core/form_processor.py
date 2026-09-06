@@ -283,9 +283,12 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
             print(f"[*] Fallback: Klik 1x di area navigasi ({fb_x}, {fb_y})...")
             d.click(fb_x, fb_y)
 
+        # Beri jeda render DOM WebView agar uiautomator tidak membaca saat node sedang direbuild
+        time.sleep(1.5)
+
         # 2. Tunggu respon dan cek apakah kata/field 'NIK' sudah muncul di layar
         print("[*] Memeriksa apakah kata 'NIK' sudah muncul di layar...")
-        for wait_t in range(4):
+        for wait_t in range(6):
             time.sleep(1.0)
             if d(resourceId="id.go.bpsfasih:id/card_progress").exists:
                 continue

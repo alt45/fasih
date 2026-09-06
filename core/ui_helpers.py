@@ -95,19 +95,14 @@ def scroll_table_down(d):
 def is_nik_present_on_screen(d):
     """Mengecek apakah kata atau elemen NIK sudah muncul di layar (menandakan BLOK II aktif)."""
     try:
-        # Cek tombol Cek NIK
-        if d(text="Cek NIK").exists or d(textContains="Cek NIK").exists:
-            return True
-        # Cek resource ID r202 (field NIK)
+        # Cek selector langsung yang ringan tanpa melakukan full dump_hierarchy
         if d(resourceId="r202").exists:
             return True
-        # Cek teks NIK saat Cek ID Pelanggan sudah tidak ada
-        if not d(text="Cek ID Pelanggan").exists:
-            if d(textContains="NIK").exists or d(text="BERIKUTNYA BLOK III").exists:
-                return True
-        # Cek hierarchy jika selector belum siap
-        xml_dump = d.dump_hierarchy()
-        if ("Cek NIK" in xml_dump or "r202" in xml_dump) and "Cek ID Pelanggan" not in xml_dump:
+        if d(text="Cek NIK").exists or d(textContains="Cek NIK").exists:
+            return True
+        if d(text="BERIKUTNYA BLOK III").exists:
+            return True
+        if not d(text="Cek ID Pelanggan").exists and d(textContains="NIK").exists:
             return True
     except Exception:
         pass
