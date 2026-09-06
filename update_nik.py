@@ -340,28 +340,36 @@ def run_reverse_mode(target_device=None, custom_csv=None, is_pasca=False, enable
     print("=" * 65)
 
 
-def run_direct_random_mode(target_device=None, custom_json=None):
+def run_direct_random_mode(target_device=None, custom_json=None, is_pasca=True):
     """
-    Mode 6: OTOMASI PENGEDITAN NIK PASCA DIRECT HP (RANDOM NIK.JSON)
-    1. Memindai seluruh penugasan ID Pelanggan langsung dari HP (mendukung multi-page jika >100 item).
-    2. Melewati BLOK I (Cek ID Pelanggan di-skip langsung ke BLOK II).
-    3. Di BLOK II langsung mengisi NIK acak dari file JSON.
+    Mode 6 & 7: OTOMASI PENGEDITAN NIK DIRECT HP (RANDOM NIK.JSON)
+    - is_pasca=True  (Mode 6): Pasca Bayar (Lewati BLOK I -> Langsung BLOK II)
+    - is_pasca=False (Mode 7): Prabayar (Cek IDPEL di BLOK I -> Lanjut BLOK II)
+    1. Memindai seluruh penugasan langsung dari HP (mendukung multi-page jika >100 item).
+    2. Di BLOK I: Cek IDPEL jika Prabayar, atau lewati jika Pasca.
+    3. Di BLOK II: Langsung mengisi NIK acak dari file JSON.
     4. Cek NIK dan coba hingga maksimal 5 kali acak jika tidak ditemukan.
        - NIK TIDAK DITEMUKAN -> Dihapus dari stok JSON dan disimpan ke nik_invalid.json
        - NIK SESUAI & TERPAKAI -> Dihapus dari stok JSON dan dicatat ke nik_valid.json
     """
+    mode_num = "6" if is_pasca else "7"
+    judul_mode = "Pasca Bayar Direct HP (Mode 6)" if is_pasca else "Prabayar Direct HP (Mode 7)"
     target_json = custom_json or ""
     if not target_json:
-        target_json = pilih_file_json(judul_mode="Direct HP (Random NIK)")
+        target_json = pilih_file_json(judul_mode=judul_mode)
         if not target_json:
             return
 
+    judul_banner = "OTOMASI PENGEDITAN NIK PASCA DIRECT HP (MODE 6 - RANDOM)" if is_pasca else "OTOMASI PENGEDITAN NIK PRABAYAR DIRECT HP (MODE 7 - RANDOM)"
+    target_blok = "Lewati BLOK I -> Langsung BLOK II" if is_pasca else "Cek IDPEL di BLOK I -> Lanjut BLOK II"
+    scan_desc = "Scan ID Pelanggan (Multi-Halaman)" if is_pasca else "Scan Penugasan HP (Multi-Halaman)"
+
     print("╔══════════════════════════════════════════════════════════╗")
-    print("║  OTOMASI PENGEDITAN NIK DIRECT HP (MODE 6 - RANDOM)     ║")
+    print(f"║  {judul_banner:<56}║")
     print("╠══════════════════════════════════════════════════════════╣")
-    print("║  Sumber Data : Scan Langsung dari HP (Multi-Halaman)     ║")
+    print(f"║  Sumber Data : {scan_desc:<41} ║")
     print(f"║  Sumber NIK  : {target_json:<41} ║")
-    print("║  Target Blok : Lewati BLOK I -> Langsung BLOK II         ║")
+    print(f"║  Target Blok : {target_blok:<41} ║")
     if target_device:
         print(f"║  Device ID   : {target_device:<41} ║")
     print("╚══════════════════════════════════════════════════════════╝\n")
@@ -383,35 +391,36 @@ def run_direct_random_mode(target_device=None, custom_json=None):
     time.sleep(2.0)
 
     # 3. Pindai seluruh penugasan dari HP (mendukung multi-page >100 item)
-    scanned_idpels = scan_all_assignments_from_hp(d, scan_by="idpel")
-    if not scanned_idpels:
-        print("[!] Tidak ada ID Pelanggan yang berhasil discan dari HP. Program berhenti.")
+    scan_type = "idpel" if is_pasca else "auto"
+    scanned_items = scan_all_assignments_from_hp(d, scan_by=scan_type)
+    if not scanned_items:
+        print("[!] Tidak ada data penugasan yang berhasil discan dari HP. Program berhenti.")
         return
 
-    total_data = len(scanned_idpels)
-    print(f"\n[*] Memulai eksekusi {total_data} penugasan hasil scan HP dengan NIK acak...\n")
+    total_data = len(scanned_items)
+    print(f"\n[*] Memulai eksekusi {total_data} penugasan hasil scan HP dengan NIK acak (Mode {mode_num})...\n")
 
     sukses_count = 0
     idpel_tidak_ada_count = 0
     nik_tidak_ditemukan_count = 0
     gagal_count = 0
 
-    for idx, idpel in enumerate(scanned_idpels, start=1):
+    for idx, item_id in enumerate(scanned_items, start=1):
         # Ambil 1 NIK acak untuk input pertama
         first_nik = fallback_provider.get_random()
         item = {
-            "id_pelanggan": idpel,
+            "id_pelanggan": item_id,
             "NIK_Perbaikan": first_nik,
             "daya": "1300"  # Set non-450 agar fallback 5x acak aktif jika NIK pertama tidak ditemukan
         }
-        print(f"\n>>> Progress Direct Mode 6: [{idx}/{total_data}] IDPEL: {idpel} <<<")
+        print(f"\n>>> Progress Direct Mode {mode_num}: [{idx}/{total_data}] Target: {item_id} <<<")
 
         try:
             status_hasil = process_update_nik(
                 d,
                 item,
                 csv_input_path=None,
-                skip_cek_idpel=True,
+                skip_cek_idpel=is_pasca,
                 fallback_nik_provider=fallback_provider
             )
             if status_hasil == "SUKSES":
@@ -423,10 +432,10 @@ def run_direct_random_mode(target_device=None, custom_json=None):
             else:
                 idpel_tidak_ada_count += 1
         except Exception as e:
-            print(f"[X] Gagal memproses IDPEL {idpel}: {e}")
+            print(f"[X] Gagal memproses {item_id}: {e}")
             gagal_count += 1
             append_to_log(OUT_GAGAL, {
-                "id_pelanggan": idpel,
+                "id_pelanggan": item_id,
                 "NIK_Perbaikan": first_nik,
                 "error": str(e),
                 "waktu": time.strftime("%Y-%m-%d %H:%M:%S")
@@ -436,11 +445,11 @@ def run_direct_random_mode(target_device=None, custom_json=None):
             time.sleep(2.0)
 
     print("\n" + "=" * 65)
-    print("             PEMROSESAN DIRECT MODE 6 SELESAI!")
+    print(f"             PEMROSESAN DIRECT MODE {mode_num} SELESAI!")
     print("=" * 65)
     print(f"  - Total Penugasan HP    : {total_data}")
     print(f"  - Berhasil Diupdate     : {sukses_count} (Cek: '{OUT_SUKSES}')")
-    print(f"  - IDPEL Tidak Ditemukan : {idpel_tidak_ada_count} (Cek: '{OUT_TIDAK_DITEMUKAN}')")
+    print(f"  - IDPEL/Meter Tidak Ada : {idpel_tidak_ada_count} (Cek: '{OUT_TIDAK_DITEMUKAN}')")
     print(f"  - NIK Gagal / 5x Acak   : {nik_tidak_ditemukan_count} (Cek: '{OUT_NIK_TIDAK_DITEMUKAN}')")
     print(f"  - Gagal / Galat         : {gagal_count} (Cek: '{OUT_GAGAL}')")
     print("=" * 65)
@@ -456,7 +465,7 @@ def main(custom_device=None, custom_csv=None, mode="forward", custom_json=None):
     parser.add_argument("--device", "-d", type=str, default="", help="Serial ID perangkat Android (lihat via 'adb devices')")
     parser.add_argument("--csv", "-c", type=str, default="", help="Nama/path file CSV data perbaikan NIK")
     parser.add_argument("--json", "-j", type=str, default="", help="Nama/path file JSON stok NIK (default: nik.json)")
-    parser.add_argument("--mode", "-m", type=str, default="forward", help="Pilih mode: 'forward' ('2') / 'reverse' ('3') / 'pasca' ('4') / 'pascadaya' ('5') / 'direct' ('6')")
+    parser.add_argument("--mode", "-m", type=str, default="forward", help="Pilih mode: 'forward' ('2') / 'reverse' ('3') / 'pasca' ('4') / 'pascadaya' ('5') / 'direct' ('6') / 'direct_pra' ('7')")
     
     args, _ = parser.parse_known_args()
     target_device = custom_device or args.device or DEVICE_ID
@@ -464,8 +473,11 @@ def main(custom_device=None, custom_csv=None, mode="forward", custom_json=None):
     target_json = custom_json or getattr(args, "json", "") or ""
     selected_mode = mode or args.mode or "forward"
 
-    if selected_mode.lower() in ["direct", "6", "pascarandom", "hp_random", "random"]:
-        run_direct_random_mode(target_device=target_device, custom_json=target_json)
+    if selected_mode.lower() in ["direct_pra", "7", "pradirect", "pra_random", "prabayar_direct", "pra"]:
+        run_direct_random_mode(target_device=target_device, custom_json=target_json, is_pasca=False)
+        return
+    elif selected_mode.lower() in ["direct", "6", "pascarandom", "hp_random", "random"]:
+        run_direct_random_mode(target_device=target_device, custom_json=target_json, is_pasca=True)
         return
     elif selected_mode.lower() in ["pascadaya", "5", "pasca_daya", "daya"]:
         run_reverse_mode(target_device=target_device, custom_csv=target_csv, is_pasca=True, enable_daya_fallback=True)
