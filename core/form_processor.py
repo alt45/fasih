@@ -137,13 +137,29 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
     time.sleep(1.5)
 
     # 7. Klik 'YA' pada konfirmasi buka assignment
-    btn_ya_buka = d(resourceId="id.go.bpsfasih:id/rButton_bottomDialog")
-    if not btn_ya_buka.exists:
-        btn_ya_buka = d(text="YA")
-    if not btn_ya_buka.exists:
-        d.click(519, 1385)  # Fallback koordinat center YA
+    w_dev, h_dev = d.window_size()
+    for attempt_buka in range(10):
+        btn_ya_buka = d(resourceId="id.go.bpsfasih:id/rButton_bottomDialog")
+        if not btn_ya_buka.exists:
+            btn_ya_buka = d(className="android.widget.Button", textMatches="(?i)^(ya|iya)$")
+        if not btn_ya_buka.exists:
+            btn_ya_buka = d(textMatches="(?i)^(ya|iya)$")
+        
+        if btn_ya_buka.exists:
+            bounds = btn_ya_buka.info.get("bounds")
+            if bounds:
+                cx = (bounds["left"] + bounds["right"]) // 2
+                cy = (bounds["top"] + bounds["bottom"]) // 2
+                d.click(cx, cy)
+            else:
+                btn_ya_buka.click()
+            time.sleep(1.0)
+            if not d(resourceId="id.go.bpsfasih:id/rButton_bottomDialog").exists:
+                break
+        else:
+            time.sleep(0.4)
     else:
-        btn_ya_buka.click()
+        d.click(int(w_dev * 0.72), int(h_dev * 0.925))
     
     print("[*] Menunggu loading kuesioner selesai (card_progress)...")
     for _ in range(30):
@@ -548,48 +564,82 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
     if btn_konfirm.exists:
         btn_konfirm.click()
     else:
-        d.click(360, 850)
-    time.sleep(2.5)
+        w_dev, h_dev = d.window_size()
+        d.click(w_dev // 2, int(h_dev * 0.66))
+    time.sleep(1.5)
 
     # Dialog Akhir 'YA'
-    print("[*] Mengonfirmasi final: Mengklik 'YA'...")
-    btn_ya_final = d(resourceId="id.go.bpsfasih:id/rButton_bottomDialog")
-    if not btn_ya_final.exists:
-        btn_ya_final = d(text="YA")
-    if not btn_ya_final.exists:
-        btn_ya_final = d(text="IYA")
-    if btn_ya_final.exists:
-        btn_ya_final.click()
-    else:
-        d.click(519, 1385)
+    print("[*] Mengonfirmasi final: Menunggu dan mengklik 'YA'...")
+    w_dev, h_dev = d.window_size()
+    ya_confirmed = False
+    for attempt in range(15):
+        btn_ya_final = d(resourceId="id.go.bpsfasih:id/rButton_bottomDialog")
+        if not btn_ya_final.exists:
+            btn_ya_final = d(className="android.widget.Button", textMatches="(?i)^(ya|iya)$")
+        if not btn_ya_final.exists:
+            btn_ya_final = d(textMatches="(?i)^(ya|iya)$")
+        
+        if btn_ya_final.exists:
+            bounds = btn_ya_final.info.get("bounds")
+            if bounds:
+                cx = (bounds["left"] + bounds["right"]) // 2
+                cy = (bounds["top"] + bounds["bottom"]) // 2
+                d.click(cx, cy)
+            else:
+                btn_ya_final.click()
+            time.sleep(1.2)
+            
+            # Verifikasi apakah dialog YA sudah hilang
+            if not d(resourceId="id.go.bpsfasih:id/rButton_bottomDialog").exists and not d(textMatches="(?i)^(ya|iya)$").exists:
+                ya_confirmed = True
+                print(f"[OK] Tombol 'YA' berhasil diklik dan dialog tertutup (percobaan ke-{attempt+1}).")
+                break
+            else:
+                print(f"[*] Dialog 'YA' masih aktif, mencoba klik ulang (percobaan ke-{attempt+1})...")
+        else:
+            # Cek jika sudah langsung berpindah activity
+            curr_act = d.app_current().get("activity", "")
+            if "UploadActivity" in curr_act or "AssignmentActivity" in curr_act:
+                ya_confirmed = True
+                break
+            time.sleep(0.5)
 
-    print("[*] Menunggu proses upload & submit ke server selesai (muncul tombol OK/Tutup atau Halaman Upload)...")
-    btn_close_submit = d(resourceId="id.go.bpsfasih:id/btn_submit_progress_close")
+    if not ya_confirmed:
+        fallback_x = int(w_dev * 0.72)
+        fallback_y = int(h_dev * 0.925)
+        print(f"[*] Fallback: Mengklik koordinat tombol YA ({fallback_x}, {fallback_y})...")
+        d.click(fallback_x, fallback_y)
+        time.sleep(2.0)
+
+    print("[*] Menunggu proses upload & submit ke server selesai...")
     submit_done = False
-    for wait_ok in range(75):
-        # 1. Jika langsung masuk ke Halaman Upload tanpa dialog
-        if d(text="Halaman Upload").exists or d(resourceId="id.go.bpsfasih:id/btn_check_status_bulk").exists:
-            print(f"[OK] Submit selesai, terdeteksi langsung beralih ke Halaman Upload (detik ke-{wait_ok+1})!")
+    for wait_ok in range(90):
+        curr_act = d.app_current().get("activity", "")
+
+        # 1. Jika aplikasi langsung beralih ke UploadActivity atau AssignmentActivity
+        if "UploadActivity" in curr_act or d(resourceId="id.go.bpsfasih:id/title_toolbar", text="Halaman Upload").exists or d(resourceId="id.go.bpsfasih:id/btn_check_status_bulk").exists:
+            print(f"[OK] Submit selesai, terdeteksi sudah berada di Halaman Upload ({wait_ok+1}s)!")
             submit_done = True
             break
 
-        # 2. Jika tombol penutup dialog submit (OK / Tutup) sudah muncul
-        if (
-            btn_close_submit.exists
-            or d(text="OK").exists
-            or d(text="Tutup").exists
-            or d(text="TUTUP").exists
-            or d(textContains="Cek status final di Halaman Upload").exists
-        ):
-            btn_label = "OK/Tutup"
-            if btn_close_submit.exists:
-                btn_label = btn_close_submit.info.get("text", "Tutup")
-            elif d(text="OK").exists:
-                btn_label = "OK"
-            elif d(text="Tutup").exists:
-                btn_label = "Tutup"
+        if "AssignmentActivity" in curr_act and (d(text="Daftar Assignment").exists or d(text="Search:").exists):
+            print(f"[OK] Submit selesai, langsung berpindah ke Daftar Assignment ({wait_ok+1}s)!")
+            submit_done = True
+            break
 
+        # 2. Cek apakah tombol penutup dialog submit (Tutup / OK) sudah muncul
+        btn_close_submit = d(resourceId="id.go.bpsfasih:id/btn_submit_progress_close")
+        if not btn_close_submit.exists:
+            btn_close_submit = d(className="android.widget.Button", textMatches="(?i)^(ok|tutup)$")
+
+        if btn_close_submit.exists:
+            btn_label = btn_close_submit.info.get("text", "Tutup")
             print(f"[OK] Proses submit selesai, tombol '{btn_label}' terdeteksi (detik ke-{wait_ok+1})!")
+            for _ in range(3):
+                btn_close_submit.click()
+                time.sleep(1.2)
+                if not d(resourceId="id.go.bpsfasih:id/btn_submit_progress_close").exists and not d(className="android.widget.Button", textMatches="(?i)^(ok|tutup)$").exists:
+                    break
             submit_done = True
             break
 
@@ -603,49 +653,23 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
 
         time.sleep(1.0)
 
-    # Klik tombol penutup dialog (OK / Tutup) jika dialog muncul
-    if not (d(text="Halaman Upload").exists or d(resourceId="id.go.bpsfasih:id/btn_check_status_bulk").exists):
-        for click_attempt in range(3):
-            if btn_close_submit.exists:
-                btn_close_submit.click()
-            elif d(text="OK").exists:
-                d(text="OK").click()
-            elif d(text="Tutup").exists:
-                d(text="Tutup").click()
-            elif d(text="TUTUP").exists:
-                d(text="TUTUP").click()
-            else:
-                w_dev, h_dev = d.window_size()
-                d.click(w_dev // 2, int(h_dev * 0.83))
-            time.sleep(1.5)
-            # Jika dialog progress submit sudah hilang atau masuk Halaman Upload/Daftar Assignment, selesai
-            if not (
-                d(resourceId="id.go.bpsfasih:id/btn_submit_progress_close").exists
-                or d(text="Submit diproses").exists
-                or d(text="Mengunggah berkas assignment").exists
-                or d(text="Upload gagal").exists
-            ):
-                print("[OK] Dialog progres submit berhasil ditutup.")
-                break
-            time.sleep(1.0)
-
     # 13. Deteksi Layar Tujuan Setelah Submit Selesai (Halaman Upload vs Daftar Assignment)
     print("[*] Memeriksa layar tujuan setelah submit (Halaman Upload atau Daftar Assignment)...")
     detected_screen = None
     for wait_scr in range(15):
         time.sleep(1.0)
-        # Jika ada loading progress, tunggu proses render selesai
         if d(resourceId="id.go.bpsfasih:id/card_progress").exists:
             continue
 
+        curr_act = d.app_current().get("activity", "")
         # Cek apakah masuk ke 'Halaman Upload'
-        if d(text="Halaman Upload").exists or d(resourceId="id.go.bpsfasih:id/btn_check_status_bulk").exists or d(resourceId="id.go.bpsfasih:id/btn_check_status").exists:
+        if "UploadActivity" in curr_act or d(resourceId="id.go.bpsfasih:id/title_toolbar", text="Halaman Upload").exists or d(resourceId="id.go.bpsfasih:id/btn_check_status_bulk").exists:
             detected_screen = "HALAMAN_UPLOAD"
             print(f"[OK] Terdeteksi masuk ke 'Halaman Upload' (detik ke-{wait_scr+1})!")
             break
 
         # Cek apakah langsung masuk ke 'Daftar Assignment'
-        if d(text="Daftar Assignment").exists or d(text="Search:").exists:
+        if "AssignmentActivity" in curr_act or d(text="Daftar Assignment").exists or d(text="Search:").exists:
             detected_screen = "DAFTAR_ASSIGNMENT"
             print(f"[OK] Terdeteksi langsung kembali ke 'Daftar Assignment' (detik ke-{wait_scr+1})!")
             break
@@ -661,14 +685,13 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
         if not btn_bulk.exists:
             btn_bulk = d(resourceId="id.go.bpsfasih:id/btn_check_status")
         if not btn_bulk.exists:
-            btn_bulk = d(text="Cek Status")
-        
+            btn_bulk = d(textContains="Submission Pending")
+
         if btn_bulk.exists:
             btn_txt = btn_bulk.info.get("text", "Cek Status")
             print(f"[*] Mengklik tombol '{btn_txt}' ({btn_bulk.info.get('resourceName', '')})...")
             btn_bulk.click()
         else:
-            # Fallback koordinat persis sesuai permintaan: center dari [435,276][666,337] -> (550, 306)
             w_dev, h_dev = d.window_size()
             cx = int(w_dev * 0.76)  # 550 pada 720
             cy = int(h_dev * 0.24)  # 306 pada 1280
@@ -676,6 +699,7 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
             d.click(cx, cy)
 
         # Tunggu sampai status berubah / loading selesai
+        print("[*] Menunggu verifikasi status antrean upload...")
         for wait_s in range(15):
             time.sleep(1.0)
             if d(resourceId="id.go.bpsfasih:id/card_progress").exists:
@@ -698,12 +722,13 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
         print("[*] Memastikan kembali ke halaman Daftar Assignment...")
         for _ in range(15):
             time.sleep(1.0)
+            curr_act = d.app_current().get("activity", "")
             if d(resourceId="id.go.bpsfasih:id/card_progress").exists:
                 continue
-            if d(text="Daftar Assignment").exists or d(text="Search:").exists:
+            if "AssignmentActivity" in curr_act or d(text="Daftar Assignment").exists or d(text="Search:").exists:
                 print("[OK] Berhasil kembali ke halaman Daftar Assignment.")
                 break
-            if d(text="Halaman Upload").exists or d(resourceId="id.go.bpsfasih:id/back_button").exists:
+            if "UploadActivity" in curr_act or d(text="Halaman Upload").exists or d(resourceId="id.go.bpsfasih:id/back_button").exists:
                 btn_back = d(resourceId="id.go.bpsfasih:id/back_button")
                 if btn_back.exists:
                     btn_back.click()

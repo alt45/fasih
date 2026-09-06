@@ -29,3 +29,5 @@ ui_dump/
 # File state lokal
 .nik_fallback_state.json
 *.state.json
+
+scratch/

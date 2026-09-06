@@ -130,16 +130,16 @@ def back_to_assignment_list(d):
     """Mengembalikan layar ke halaman depan 'Daftar Assignment' secara aman jika terjadi kendala."""
     print("[*] Melakukan recovery kembali ke halaman Daftar Assignment...")
     hide_keyboard(d)
+    w_dev, h_dev = d.window_size()
     
-    # Cek apakah layar sedang tertahan di dialog 'Submit diproses' (tombol 'OK')
-    if d(text="Submit diproses").exists or d(text="OK").exists or d(textContains="Cek status final di Halaman Upload").exists:
-        print("[*] Recovery: Terdeteksi dialog 'Submit diproses' / tombol 'OK' aktif. Mengklik 'OK'...")
-        btn_ok = d(text="OK")
-        if btn_ok.exists:
-            btn_ok.click()
-        else:
-            d.click(359, 1326)
-        time.sleep(2.5)
+    # Cek apakah layar sedang tertahan di dialog progress submit (tombol 'OK' / 'Tutup')
+    btn_close_sub = d(resourceId="id.go.bpsfasih:id/btn_submit_progress_close")
+    if btn_close_sub.exists:
+        btn_close_sub.click()
+        time.sleep(1.5)
+    elif d(className="android.widget.Button", textMatches="(?i)^(ok|tutup)$").exists:
+        d(className="android.widget.Button", textMatches="(?i)^(ok|tutup)$").click()
+        time.sleep(1.5)
 
     # Cek apakah dialog filter status terbuka
     btn_tutup_filter = d(resourceId="id.go.bpsfasih:id/tutup_buttomDialogFilterAssignment")
@@ -152,21 +152,22 @@ def back_to_assignment_list(d):
         time.sleep(1.0)
 
     # Cek apakah ada tombol Batal pada dialog aktif
-    btn_batal = d(text="Batal")
+    btn_batal = d(className="android.widget.Button", text="Batal")
     if btn_batal.exists:
         btn_batal.click()
         time.sleep(1.0)
 
     # Cek tombol keluar form
-    for _ in range(5):
-        # Cek lagi jika dialog 'Submit diproses' masih muncul di loop
-        if d(text="Submit diproses").exists or d(text="OK").exists:
-            print("[*] Recovery loop: Mengklik tombol 'OK' dialog submit...")
-            if d(text="OK").exists:
-                d(text="OK").click()
-            else:
-                d.click(359, 1326)
-            time.sleep(2.0)
+    for _ in range(6):
+        # Cek lagi jika dialog progress submit masih muncul di loop
+        btn_close_sub = d(resourceId="id.go.bpsfasih:id/btn_submit_progress_close")
+        if btn_close_sub.exists:
+            btn_close_sub.click()
+            time.sleep(1.5)
+            continue
+        elif d(className="android.widget.Button", textMatches="(?i)^(ok|tutup)$").exists:
+            d(className="android.widget.Button", textMatches="(?i)^(ok|tutup)$").click()
+            time.sleep(1.5)
             continue
 
         # Jika ada loading progress, tunggu sebentar
@@ -174,13 +175,15 @@ def back_to_assignment_list(d):
             time.sleep(2.0)
             continue
 
+        curr_act = d.app_current().get("activity", "")
+
         # Jika sudah di halaman Daftar Assignment
-        if d(text="Daftar Assignment").exists or d(text="Search:").exists:
+        if "AssignmentActivity" in curr_act or d(text="Daftar Assignment").exists or d(text="Search:").exists:
             print("[OK] Sudah berada di halaman Daftar Assignment.")
             return True
         
         # Jika berada di Halaman Upload, klik tombol back_button
-        if d(text="Halaman Upload").exists or d(resourceId="id.go.bpsfasih:id/back_button").exists:
+        if "UploadActivity" in curr_act or d(text="Halaman Upload").exists or d(resourceId="id.go.bpsfasih:id/back_button").exists:
             btn_back = d(resourceId="id.go.bpsfasih:id/back_button")
             if btn_back.exists:
                 btn_back.click()
@@ -193,11 +196,11 @@ def back_to_assignment_list(d):
         time.sleep(1.0)
         
         # Jika muncul konfirmasi keluar (IYA/YA)
-        btn_confirm = d(text="IYA")
+        btn_confirm = d(resourceId="id.go.bpsfasih:id/rButton_bottomDialog")
         if not btn_confirm.exists:
-            btn_confirm = d(resourceId="id.go.bpsfasih:id/rButton_bottomDialog")
+            btn_confirm = d(className="android.widget.Button", textMatches="(?i)^(ya|iya)$")
         if not btn_confirm.exists:
-            btn_confirm = d(text="YA")
+            btn_confirm = d(textMatches="(?i)^(ya|iya)$")
         if btn_confirm.exists:
             btn_confirm.click()
             time.sleep(1.5)
@@ -208,4 +211,5 @@ def back_to_assignment_list(d):
                 else:
                     break
             
-    return d(text="Daftar Assignment").exists or d(text="Search:").exists
+    curr_act = d.app_current().get("activity", "")
+    return "AssignmentActivity" in curr_act or d(text="Daftar Assignment").exists or d(text="Search:").exists
