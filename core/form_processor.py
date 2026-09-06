@@ -563,34 +563,39 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
     else:
         d.click(519, 1385)
 
-    print("[*] Menunggu proses upload & submit ke server selesai (muncul tombol OK)...")
+    print("[*] Menunggu proses upload & submit ke server selesai (muncul tombol OK atau Halaman Upload)...")
     btn_ok_final = d(resourceId="id.go.bpsfasih:id/btn_submit_progress_close")
     submit_done = False
     for wait_ok in range(75):
+        # Jika langsung masuk ke Halaman Upload tanpa pop-up OK
+        if d(text="Halaman Upload").exists or d(resourceId="id.go.bpsfasih:id/btn_check_status_bulk").exists:
+            print(f"[OK] Submit selesai, terdeteksi langsung beralih ke Halaman Upload (detik ke-{wait_ok+1})!")
+            submit_done = True
+            break
         if btn_ok_final.exists or d(text="OK").exists or d(textContains="Cek status final di Halaman Upload").exists:
-            # Pastikan teks OK sudah muncul
             if d(text="OK").exists:
                 print(f"[OK] Submit server selesai (detik ke-{wait_ok+1})!")
                 submit_done = True
                 break
         time.sleep(1.0)
 
-    # Klik tombol OK dengan verifikasi penutupan dialog
-    for click_attempt in range(3):
-        if btn_ok_final.exists:
-            btn_ok_final.click()
-        elif d(text="OK").exists:
-            d(text="OK").click()
-        else:
-            print("[*] Fallback: Mengklik koordinat tombol OK (359, 1326)...")
-            d.click(359, 1326)
-        time.sleep(1.5)
-        # Jika dialog 'Submit diproses' sudah hilang, selesai
-        if not (d(text="Submit diproses").exists or d(text="OK").exists):
-            print("[OK] Dialog 'Submit diproses' berhasil ditutup.")
-            break
-        print(f"[*] Percobaan {click_attempt+1}: Dialog submit masih ada, mencoba klik tombol OK lagi...")
-        time.sleep(1.0)
+    # Klik tombol OK dengan verifikasi penutupan dialog jika dialog OK muncul
+    if not (d(text="Halaman Upload").exists or d(resourceId="id.go.bpsfasih:id/btn_check_status_bulk").exists):
+        for click_attempt in range(3):
+            if btn_ok_final.exists:
+                btn_ok_final.click()
+            elif d(text="OK").exists:
+                d(text="OK").click()
+            else:
+                w_dev, h_dev = d.window_size()
+                d.click(w_dev // 2, int(h_dev * 0.83))
+            time.sleep(1.5)
+            # Jika dialog 'Submit diproses' sudah hilang, selesai
+            if not (d(text="Submit diproses").exists or d(text="OK").exists):
+                print("[OK] Dialog 'Submit diproses' berhasil ditutup.")
+                break
+            print(f"[*] Percobaan {click_attempt+1}: Dialog submit masih ada, mencoba klik tombol OK lagi...")
+            time.sleep(1.0)
 
     # 13. Deteksi Layar Tujuan Setelah Submit Selesai (Halaman Upload vs Daftar Assignment)
     print("[*] Memeriksa layar tujuan setelah submit (Halaman Upload atau Daftar Assignment)...")
@@ -602,7 +607,7 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
             continue
 
         # Cek apakah masuk ke 'Halaman Upload'
-        if d(text="Halaman Upload").exists or d(resourceId="id.go.bpsfasih:id/btn_check_status").exists or d(resourceId="id.go.bpsfasih:id/btn_check_status_bulk").exists:
+        if d(text="Halaman Upload").exists or d(resourceId="id.go.bpsfasih:id/btn_check_status_bulk").exists or d(resourceId="id.go.bpsfasih:id/btn_check_status").exists:
             detected_screen = "HALAMAN_UPLOAD"
             print(f"[OK] Terdeteksi masuk ke 'Halaman Upload' (detik ke-{wait_scr+1})!")
             break
@@ -615,27 +620,37 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
 
     # JIKA MASUK KE HALAMAN UPLOAD:
     if detected_screen == "HALAMAN_UPLOAD":
-        print("[*] Memproses Halaman Upload: Mengklik 'Cek Status'...")
+        print("[*] Memproses Halaman Upload: Mengklik 'Cek Status Pending'...")
         time.sleep(1.5)
-        btn_cek_status = d(resourceId="id.go.bpsfasih:id/btn_check_status")
-        if not btn_cek_status.exists:
-            btn_cek_status = d(text="Cek Status")
-        if not btn_cek_status.exists:
-            btn_cek_status = d(resourceId="id.go.bpsfasih:id/btn_check_status_bulk")
+        # Prioritas 1: Tombol Cek Status Pending (Bulk)
+        btn_bulk = d(resourceId="id.go.bpsfasih:id/btn_check_status_bulk")
+        if not btn_bulk.exists:
+            btn_bulk = d(textContains="Cek Status Pending")
+        if not btn_bulk.exists:
+            btn_bulk = d(resourceId="id.go.bpsfasih:id/btn_check_status")
+        if not btn_bulk.exists:
+            btn_bulk = d(text="Cek Status")
         
-        if btn_cek_status.exists:
-            btn_cek_status.click()
-            print("[*] Tombol 'Cek Status' diklik. Menunggu status antrian berubah menjadi SUCCESS...")
+        if btn_bulk.exists:
+            btn_txt = btn_bulk.info.get("text", "Cek Status")
+            print(f"[*] Mengklik tombol '{btn_txt}' ({btn_bulk.info.get('resourceName', '')})...")
+            btn_bulk.click()
         else:
-            print("[*] Fallback: Mengklik koordinat tombol Cek Status (570, 665)...")
-            d.click(570, 665)
+            # Fallback koordinat persis sesuai permintaan: center dari [435,276][666,337] -> (550, 306)
+            w_dev, h_dev = d.window_size()
+            cx = int(w_dev * 0.76)  # 550 pada 720
+            cy = int(h_dev * 0.24)  # 306 pada 1280
+            print(f"[*] Fallback: Mengklik koordinat tombol Cek Status Pending ({cx}, {cy})...")
+            d.click(cx, cy)
 
-        # Tunggu sampai status berubah menjadi SUCCESS
+        # Tunggu sampai status berubah / loading selesai
         for wait_s in range(15):
             time.sleep(1.0)
+            if d(resourceId="id.go.bpsfasih:id/card_progress").exists:
+                continue
             xml_upload = d.dump_hierarchy()
-            if "SUCCESS" in xml_upload:
-                print(f"[OK] Status antrian upload berubah menjadi SUCCESS (detik ke-{wait_s+1})!")
+            if "SUCCESS" in xml_upload or "Tidak Ada Submission" in xml_upload or "FAILED" in xml_upload:
+                print(f"[OK] Status antrian upload terverifikasi (detik ke-{wait_s+1})!")
                 break
 
         time.sleep(1.5)
