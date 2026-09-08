@@ -241,52 +241,6 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
         time.sleep(0.5)
     else:
         print("[*] BLOK I (Pasca Bayar): Melewati 'Cek ID Pelanggan' sesuai konfigurasi...")
-        
-        print("[*] Memeriksa keberadaan tombol 'Ambil Waktu' di BLOK I...")
-        btn_jam = d(text="Ambil Waktu")
-        if not btn_jam.exists:
-            btn_jam = d(className="android.widget.Button", text="Ambil Waktu")
-            
-        if btn_jam.exists:
-            print("[*] Tombol 'Ambil Waktu' ditemukan, mengklik...")
-            try:
-                cx, cy = btn_jam.center()
-                d.click(cx, cy)
-            except Exception:
-                try:
-                    btn_jam.click()
-                except Exception:
-                    d.click(360, 734) # Fallback koordinat
-            time.sleep(1.5)
-            
-            # Konfirmasi dialog jam
-            btn_confirm_time = d(textMatches="(?i)^(ya|ok|simpan)$")
-            if btn_confirm_time.exists:
-                try:
-                    cx, cy = btn_confirm_time.center()
-                    d.click(cx, cy)
-                    print("[*] Waktu berhasil dikonfirmasi (Ya/OK).")
-                except:
-                    try:
-                        btn_confirm_time.click()
-                        print("[*] Waktu berhasil dikonfirmasi (Ya/OK).")
-                    except:
-                        d.click(360, 852)
-                        print("[*] Menggunakan fallback koordinat untuk konfirmasi waktu.")
-            else:
-                d.click(360, 852)
-                print("[*] Menggunakan fallback koordinat untuk konfirmasi waktu.")
-            time.sleep(1.0)
-            
-            # Tunggu loading (card_progress) jika ada
-            for _ in range(15):
-                if d(resourceId="id.go.bpsfasih:id/card_progress").exists:
-                    time.sleep(0.3)
-                else:
-                    break
-        else:
-            print("[*] Tombol 'Ambil Waktu' tidak ditemukan, melanjutkan...")
-            
         time.sleep(0.5)
 
     # 9. Klik 'BERIKUTNYA BLOK II' (Hanya klik 1x -> Cek kata NIK di layar -> Jika belum ada, klik lagi)
