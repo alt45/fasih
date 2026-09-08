@@ -1,5 +1,8 @@
 import re
 import time
+import os
+import json
+from datetime import datetime
 from .ui_helpers import (
     back_to_assignment_list,
     clear_search_box,
@@ -82,6 +85,57 @@ def scan_all_assignments_from_hp(d, scan_by="auto"):
     # 2. Gulir ke baris paling awal
     print("[*] Menggulir tabel ke baris paling awal...")
     scroll_table_up(d, swipes=15)
+    
+    # === SMART CACHING LOGIC ===
+    # Ambil 5 ID pertama dari layar awal sebagai signature
+    xml_first_screen = d.dump_hierarchy()
+    if detected_type == "idpel":
+        sig_plus = re.findall(r'\+\s*(\d{12})', xml_first_screen)
+        sig_all = [x for x in re.findall(r'\b\d{12}\b', xml_first_screen) if not x.startswith("0000")]
+        current_signature = sig_plus if sig_plus else sig_all
+    else:
+        current_signature = re.findall(r'\b\d{11}\b', xml_first_screen)
+    
+    # Ambil unik max 5
+    sig_unique = []
+    for s in current_signature:
+        if s not in sig_unique:
+            sig_unique.append(s)
+            if len(sig_unique) == 5:
+                break
+                
+    cache_file = "cache_scan.json"
+    if os.path.exists(cache_file):
+        try:
+            with open(cache_file, "r", encoding="utf-8") as f:
+                cache_data = json.load(f)
+                
+            if cache_data.get("scan_type") == detected_type:
+                cached_ids = cache_data.get("data", [])
+                match_count = sum(1 for s in sig_unique if s in cached_ids)
+                
+                # Jika minimal 2 ID cocok, asumsikan ini daftar yang sama
+                if match_count >= 2:
+                    waktu_cache = cache_data.get("timestamp", "Tidak diketahui")
+                    total_cache = len(cached_ids)
+                    
+                    print(f"\n[INFO] Ditemukan file cache scan sebelumnya ({total_cache} data, diambil pada {waktu_cache}).")
+                    print(f"       (Kecocokan signature layar: {match_count}/{len(sig_unique)} ID cocok)")
+                    
+                    # Konfirmasi terminal
+                    while True:
+                        pilihan = input("Gunakan data cache ini untuk mempercepat proses tanpa scan ulang? (y/n): ").strip().lower()
+                        if pilihan in ['y', 'yes']:
+                            print("[✓] Menggunakan data dari cache. Mengabaikan pemindaian ulang.")
+                            return cached_ids
+                        elif pilihan in ['n', 'no']:
+                            print("[*] Memilih untuk scan ulang. Memulai pemindaian dari awal...")
+                            break
+                        else:
+                            print("[!] Pilihan tidak valid. Ketik 'y' atau 'n'.")
+        except Exception as e:
+            print(f"[!] Gagal membaca {cache_file}: {e}")
+    # === END SMART CACHING LOGIC ===
 
     collected = []
     unit_label = "ID Pelanggan" if detected_type == "idpel" else "Nomor Meter"
@@ -253,6 +307,18 @@ def scan_all_assignments_from_hp(d, scan_by="auto"):
     scroll_table_up(d, swipes=15)
 
     print(f"[✓] Berhasil mengumpulkan {len(collected)} {unit_label} unik dari seluruh halaman HP.")
+    
+    try:
+        with open("cache_scan.json", "w", encoding="utf-8") as f:
+            json.dump({
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "scan_type": detected_type,
+                "data": collected
+            }, f, indent=4)
+        print("[*] Hasil scan berhasil disimpan ke 'cache_scan.json' untuk penggunaan selanjutnya.")
+    except Exception as e:
+        print(f"[!] Gagal menyimpan cache: {e}")
+        
     return collected
 
 

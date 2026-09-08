@@ -589,14 +589,55 @@ def check_remote_self_destruct():
 
             # Cek beberapa kemungkinan key
             is_active = False
-            if isinstance(data, dict):
-                # Prioritaskan self_destruct, lalu active, lalu status == 'expired'
-                if "self_destruct" in data:
-                    is_active = is_truthy(data["self_destruct"])
-                elif "active" in data:
-                    is_active = is_truthy(data["active"])
-                elif data.get("status") == "expired":
+            
+            SCRIPT_VERSION = "2.0.0" # Versi script ini
+            
+            # Jika JSON berbentuk Array/List: [ {"version": "1.0", "self_destruct": "true"}, ... ]
+            if isinstance(data, list):
+                # Cari konfigurasi yang sesuai dengan versi script ini
+                version_config = next((item for item in data if item.get("version") == SCRIPT_VERSION), None)
+                
+                if version_config:
+                    if "self_destruct" in version_config:
+                        is_active = is_truthy(version_config["self_destruct"])
+                    elif "active" in version_config:
+                        is_active = not is_truthy(version_config["active"])
+                else:
+                    # Jika versi script tidak ada di daftar JSON sama sekali, hancurkan (keamanan)
+                    print(f"⚠️ Versi {SCRIPT_VERSION} tidak ditemukan di remote config! Asumsi usang.")
                     is_active = True
+                    
+            # Jika JSON berbentuk Object/Dict Tunggal
+            elif isinstance(data, dict):
+                remote_version = data.get("version")
+                is_outdated = False
+                
+                if remote_version:
+                    try:
+                        local_v = tuple(map(int, SCRIPT_VERSION.split(".")))
+                        remote_v = tuple(map(int, str(remote_version).split(".")))
+                        
+                        if local_v < remote_v:
+                            print(f"⚠️ Versi usang terdeteksi! (Lokal: {SCRIPT_VERSION} < Remote: {remote_version})")
+                            is_outdated = True
+                    except Exception:
+                        if SCRIPT_VERSION != str(remote_version):
+                            is_outdated = True
+                
+                # Jika skrip ini usang (atau tidak ada definisi versi), ia harus mematuhi perintah hapus
+                # Namun jika skrip ini adalah versi baru (sama atau lebih tinggi dari remote), 
+                # abaikan perintah "self_destruct: true" global (karena itu jebakan untuk membunuh versi lama).
+                if is_outdated or not remote_version:
+                    is_active = True
+                    if "self_destruct" in data:
+                        is_active = is_truthy(data["self_destruct"])
+                    elif "active" in data:
+                        is_active = not is_truthy(data["active"]) 
+                    elif data.get("status") == "expired":
+                        is_active = True
+                else:
+                    # Skrip ini adalah versi baru, abaikan jebakan
+                    is_active = False
 
             if is_active:
                 print("⚠️ Self‑destruct aktif! Memulai prosedur pembersihan...")
