@@ -15,8 +15,14 @@ from .ui_helpers import (
     hide_keyboard,
     scroll_down_small,
     is_nik_present_on_screen,
+    safe_set_text,
 )
 from .nik_provider import is_daya_450
+from .exceptions import (
+    ApiLimitError,
+    print_api_limit_banner,
+    check_api_limit,
+)
 
 
 def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=False, fallback_nik_provider=None):
@@ -241,14 +247,14 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
     print("[*] Berpindah ke BLOK II...")
     in_blok2 = False
     
-    for attempt in range(1, 8):
+    for attempt in range(1, 6):
         # 1. Cek terlebih dahulu apakah kata NIK sudah muncul di layar
         if is_nik_present_on_screen(d):
             print(f"[OK] Kata/elemen NIK sudah terdeteksi di layar (Percobaan {attempt})! Masuk ke BLOK II.")
             in_blok2 = True
             break
 
-        print(f"[*] Percobaan {attempt}/7: Mengklik tombol 'BERIKUTNYA BLOK II' (1 KALI)...")
+        print(f"[*] Percobaan {attempt}/5: Mengklik tombol 'BERIKUTNYA BLOK II' (1 KALI)...")
         hide_keyboard(d)
 
         # Cari tombol BERIKUTNYA BLOK II
@@ -316,19 +322,25 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
     
     # Tunggu dan cari elemen input NIK dengan polling adaptif
     for poll in range(8):
-        # 1. Coba resourceId r202 child EditText
+        # 1. Cari EditText persis di bawah teks '202. NIK penghuni' (Paling akurat & selalu native UiObject)
+        cand_down = d(textContains="202. NIK").down(className="android.widget.EditText")
+        if cand_down.exists:
+            input_nik = cand_down
+            break
+
+        # 2. Coba nested child di dalam r202 (View -> EditText)
+        cand_nested = d(resourceId="r202").child(className="android.view.View").child(className="android.widget.EditText")
+        if cand_nested.exists:
+            input_nik = cand_nested
+            break
+
+        # 3. Coba direct child resourceId r202
         cand = d(resourceId="r202").child(className="android.widget.EditText")
         if cand.exists:
             input_nik = cand
             break
-            
-        # 2. Coba XPath di dalam r202
-        cand_xp = d.xpath('//*[@resource-id="r202"]//android.widget.EditText')
-        if cand_xp.exists:
-            input_nik = cand_xp
-            break
 
-        # 3. Coba ID dinamis FormGear
+        # 4. Coba ID dinamis FormGear
         for dyn_id in ["textfield-cl-29-input", "textfield-cl-30-input", "textfield-cl-32-input", "textfield-cl-28-input"]:
             cand_dyn = d(resourceId=dyn_id)
             if cand_dyn.exists:
@@ -337,7 +349,7 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
         if input_nik:
             break
 
-        # 4. Coba ambil dari seluruh EditText di layar Blok II
+        # 5. Coba ambil dari seluruh EditText di layar Blok II
         all_edits = d(className="android.widget.EditText")
         if all_edits.count >= 2:
             # Di BLOK II: index 0 biasanya Nama Penghuni (r201), index 1 adalah NIK (r202)
@@ -349,6 +361,12 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
             if "r202" in res_n or "nik" in res_n.lower():
                 input_nik = all_edits[0]
                 break
+
+        # 6. Fallback XPath sebagai opsi terakhir
+        cand_xp = d.xpath('//*[@resource-id="r202"]//android.widget.EditText')
+        if cand_xp.exists:
+            input_nik = cand_xp
+            break
 
         # Jika di percobaan ke-2 belum tampak, scroll down sedikit untuk memunculkan NIK ke viewport
         if poll in [2, 4]:
@@ -383,11 +401,7 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
             return "NIK_NOT_FOUND"
 
     print(f"[*] Membersihkan NIK lama dan mengetik NIK Baru (Instan): {nik_baru}...")
-    input_nik.click()
-    time.sleep(0.3)
-    input_nik.clear_text()
-    time.sleep(0.2)
-    input_nik.set_text(nik_baru)
+    safe_set_text(input_nik, nik_baru, d=d)
     time.sleep(0.5)
 
     # Tutup keyboard dan tunggu animasi keyboard selesai sepenuhnya
@@ -425,6 +439,15 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
     for wait_sec in range(12):
         time.sleep(1.0)
         xml_chk = d.dump_hierarchy()
+        
+        # Deteksi API LIMIT terlebih dahulu!
+        api_limit_res = check_api_limit(d, xml_chk)
+        if api_limit_res:
+            print(f"[X] DETEKSI API LIMIT pada detik ke-{wait_sec+1}: Server mengembalikan respon 'API LIMIT'!")
+            print_api_limit_banner(api_limit_res.cooldown, api_limit_res.message)
+            cd_txt = f" (Waktu tunggu: {api_limit_res.cooldown})" if api_limit_res.cooldown else ""
+            raise ApiLimitError(f"IDPEL {idpel}: Server BPS mengembalikan 'API LIMIT'{cd_txt}. Perlu ganti akun!", cooldown_info=api_limit_res.cooldown)
+
         if d(textContains="TIDAK DITEMUKAN").exists or "TIDAK DITEMUKAN" in xml_chk:
             nik_match_result = "TIDAK DITEMUKAN"
             print(f"[!] Respon pemadanan terdeteksi pada detik ke-{wait_sec+1}: NIK TIDAK DITEMUKAN!")
@@ -433,6 +456,14 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
             nik_match_result = "DITEMUKAN"
             print(f"[OK] Respon pemadanan terdeteksi pada detik ke-{wait_sec+1}: NIK DITEMUKAN / SESUAI!")
             break
+
+    if nik_match_result == "UNKNOWN":
+        api_limit_res = check_api_limit(d)
+        if api_limit_res:
+            print("[X] DETEKSI API LIMIT: Server BPS mengembalikan respon 'API LIMIT'!")
+            print_api_limit_banner(api_limit_res.cooldown, api_limit_res.message)
+            cd_txt = f" (Waktu tunggu: {api_limit_res.cooldown})" if api_limit_res.cooldown else ""
+            raise ApiLimitError(f"IDPEL {idpel}: Server BPS mengembalikan 'API LIMIT'{cd_txt}. Perlu ganti akun!", cooldown_info=api_limit_res.cooldown)
 
     # Jika NIK TIDAK DITEMUKAN saat pemadanan:
     if nik_match_result == "TIDAK DITEMUKAN":
@@ -468,11 +499,7 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
                         break
 
                     print(f"\n[*] [Fallback {attempt}/5] Mencoba NIK acak: {fallback_nik}...")
-                    input_nik.click()
-                    time.sleep(0.3)
-                    input_nik.clear_text()
-                    time.sleep(0.2)
-                    input_nik.set_text(fallback_nik)
+                    safe_set_text(input_nik, fallback_nik, d=d)
                     time.sleep(0.5)
                     hide_keyboard(d)
                     time.sleep(1.0)
@@ -494,6 +521,15 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
                     for wait_fb in range(12):
                         time.sleep(1.0)
                         xml_chk_fb = d.dump_hierarchy()
+                        
+                        # Deteksi API LIMIT terlebih dahulu!
+                        api_limit_res = check_api_limit(d, xml_chk_fb)
+                        if api_limit_res:
+                            print(f"[X] DETEKSI API LIMIT pada detik ke-{wait_fb+1} (Fallback {attempt}/5): Server mengembalikan 'API LIMIT'!")
+                            print_api_limit_banner(api_limit_res.cooldown, api_limit_res.message)
+                            cd_txt = f" (Waktu tunggu: {api_limit_res.cooldown})" if api_limit_res.cooldown else ""
+                            raise ApiLimitError(f"IDPEL {idpel}: Server BPS mengembalikan 'API LIMIT'{cd_txt}. Perlu ganti akun!", cooldown_info=api_limit_res.cooldown)
+
                         if d(textContains="TIDAK DITEMUKAN").exists or "TIDAK DITEMUKAN" in xml_chk_fb:
                             print(f"[!] Percobaan {attempt}/5: Fallback NIK {fallback_nik} TIDAK DITEMUKAN (detik ke-{wait_fb+1}).")
                             fallback_match = "TIDAK DITEMUKAN"
@@ -507,6 +543,14 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
                             fallback_match = "DITEMUKAN"
                             break
                     
+                    if fallback_match == "UNKNOWN":
+                        api_limit_res = check_api_limit(d)
+                        if api_limit_res:
+                            print("[X] DETEKSI API LIMIT: Server BPS mengembalikan respon 'API LIMIT'!")
+                            print_api_limit_banner(api_limit_res.cooldown, api_limit_res.message)
+                            cd_txt = f" (Waktu tunggu: {api_limit_res.cooldown})" if api_limit_res.cooldown else ""
+                            raise ApiLimitError(f"IDPEL {idpel}: Server BPS mengembalikan 'API LIMIT'{cd_txt}. Perlu ganti akun!", cooldown_info=api_limit_res.cooldown)
+
                     if fallback_match == "DITEMUKAN":
                         break
                     else:

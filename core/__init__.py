@@ -32,6 +32,7 @@ from .ui_helpers import (
     is_nik_present_on_screen,
     clear_search_box,
     back_to_assignment_list,
+    safe_set_text,
 )
 from .scanner import (
     scan_all_assignments_from_hp,
@@ -49,6 +50,11 @@ from .logger import (
     setup_logger,
     get_current_log_path,
     TimestampStreamWrapper,
+)
+from .exceptions import (
+    ApiLimitError,
+    print_api_limit_banner,
+    check_api_limit,
 )
 
 __all__ = [
@@ -78,6 +84,7 @@ __all__ = [
     "is_nik_present_on_screen",
     "clear_search_box",
     "back_to_assignment_list",
+    "safe_set_text",
     "scan_all_assignments_from_hp",
     "scan_all_meters_from_hp",
     "process_update_nik",
@@ -88,4 +95,7 @@ __all__ = [
     "setup_logger",
     "get_current_log_path",
     "TimestampStreamWrapper",
+    "ApiLimitError",
+    "print_api_limit_banner",
+    "check_api_limit",
 ]

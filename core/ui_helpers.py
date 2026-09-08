@@ -17,6 +17,36 @@ def hide_keyboard(d):
         time.sleep(0.6)
 
 
+def safe_set_text(element, text_val, d=None):
+    """
+    Membersihkan dan mengisi teks baru ke elemen input secara aman.
+    Mendukung UiObject maupun DeviceXPathSelector tanpa menimbulkan galat:
+    AttributeError: ('Invalid attr', 'clear_text').
+    """
+    try:
+        element.click()
+        time.sleep(0.2)
+    except Exception:
+        pass
+
+    if hasattr(element, "clear_text"):
+        try:
+            element.clear_text()
+            time.sleep(0.1)
+        except Exception:
+            pass
+
+    try:
+        element.set_text(str(text_val))
+    except Exception:
+        try:
+            element.set_text("")
+            element.set_text(str(text_val))
+        except Exception:
+            if d is not None:
+                d.send_keys(str(text_val))
+
+
 def scroll_up(d, duration=0.3):
     """Menggulir layar ke atas (gerakan jari dari atas ke bawah)."""
     try:

@@ -62,6 +62,10 @@ from core.nik_provider import (
     is_daya_450,
     pilih_file_json,
 )
+from core.exceptions import (
+    ApiLimitError,
+    print_api_limit_banner,
+)
 
 
 def run_forward_mode(target_device=None, custom_csv=None):
@@ -124,6 +128,13 @@ def run_forward_mode(target_device=None, custom_csv=None):
                 nik_tidak_ditemukan_count += 1
             else:
                 idpel_tidak_ada_count += 1
+        except ApiLimitError as e:
+            print_api_limit_banner()
+            print(f"[X] PROSES FORWARD DIHENTIKAN: {e}")
+            print("[*] Akun BPS terkena batas kuota API. Silakan logout dan login akun lain!")
+            back_to_assignment_list(d)
+            clear_search_box(d)
+            break
         except Exception as e:
             print(f"[X] Gagal memproses IDPEL {idpel}: {e}")
             gagal_count += 1
@@ -316,6 +327,13 @@ def run_reverse_mode(target_device=None, custom_csv=None, is_pasca=False, enable
                 nik_tidak_ditemukan_count += 1
             else:
                 idpel_tidak_ada_count += 1
+        except ApiLimitError as e:
+            print_api_limit_banner()
+            print(f"[X] PROSES REVERSE DIHENTIKAN: {e}")
+            print("[*] Akun BPS terkena batas kuota API. Silakan logout dan login akun lain!")
+            back_to_assignment_list(d)
+            clear_search_box(d)
+            break
         except Exception as e:
             print(f"[X] Gagal memproses IDPEL {idpel}: {e}")
             gagal_count += 1
@@ -431,6 +449,13 @@ def run_direct_random_mode(target_device=None, custom_json=None, is_pasca=True):
                 nik_tidak_ditemukan_count += 1
             else:
                 idpel_tidak_ada_count += 1
+        except ApiLimitError as e:
+            print_api_limit_banner()
+            print(f"[X] PROSES DIRECT MODE {mode_num} DIHENTIKAN: {e}")
+            print("[*] Akun BPS terkena batas kuota API. Silakan logout dan login akun lain!")
+            back_to_assignment_list(d)
+            clear_search_box(d)
+            break
         except Exception as e:
             print(f"[X] Gagal memproses {item_id}: {e}")
             gagal_count += 1

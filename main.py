@@ -8,6 +8,11 @@ import sys
 import time
 import urllib.request
 import uiautomator2 as u2
+from core.exceptions import (
+    ApiLimitError,
+    print_api_limit_banner,
+    check_api_limit,
+)
 
 # Pastikan output utf-8 aman di terminal Windows
 if sys.platform == "win32":
@@ -1084,7 +1089,17 @@ def main(target_device=None, target_csv=None):
                 btn_check_nik = d(text="Cek NIK")
                 if not safe_click_robust(d, btn_check_nik, "Cek NIK", max_scrolls=3, fallback_coord=(299, 662)):
                     raise Exception("Tombol 'Cek NIK' tidak ditemukan.")
-                time.sleep(2.5)
+                
+                print("[*] Menunggu pemadanan NIK dari server...")
+                for wait_sec in range(8):
+                    time.sleep(1.0)
+                    xml_chk = d.dump_hierarchy()
+                    if check_api_limit(d, xml_chk):
+                        print(f"[X] DETEKSI API LIMIT pada detik ke-{wait_sec+1}: Server mengembalikan respon 'API LIMIT'!")
+                        print_api_limit_banner()
+                        raise ApiLimitError(f"Server BPS mengembalikan respon 'API LIMIT' saat Cek NIK {nik_val}. Perlu ganti akun!")
+                    if "SESUAI" in xml_chk or "DITEMUKAN" in xml_chk or "TIDAK DITEMUKAN" in xml_chk:
+                        break
                 
                 # 4. Isi Nomor Telepon/HP
                 hp_val = generate_random_phone()
@@ -1329,6 +1344,12 @@ def main(target_device=None, target_csv=None):
                 # JIKA SUKSES SUBMIT: Hapus IDPEL ini dari CSV sumber
                 remove_idpel_from_csv(csv_file_path, valid_row.get('IDPEL'))
                 
+            except ApiLimitError as e:
+                print_api_limit_banner()
+                print(f"[X] PROSES PENAMBAHAN DATA BARU DIHENTIKAN: {e}")
+                print("[*] Akun BPS terkena batas kuota API. Silakan logout dan login akun lain!")
+                back_to_main_page(d)
+                break
             except Exception as e:
                 print(f"[✗] Terjadi kesalahan dalam pemrosesan assignment: {e}")
                 # Melakukan recovery kembali ke halaman depan
