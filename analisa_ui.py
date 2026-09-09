@@ -16,10 +16,17 @@ import uiautomator2 as u2
 
 OUTPUT_DIR = "ui_dump"
 
+from core.device import pilih_perangkat
+
 def connect_device():
     try:
         print("[*] Mendeteksi dan menghubungkan ke perangkat Android...")
-        d = u2.connect()  # otomatis connect ke device yang aktif
+        # Tampilkan menu pilihan device interaktif (jika lebih dari 1)
+        chosen_serial = pilih_perangkat()
+        if not chosen_serial:
+            return None
+            
+        d = u2.connect(chosen_serial)
         info = d.info
         print(f"[OK] Terhubung ke: {info.get('brand')} {info.get('model')} (Serial: {d.serial})")
         print(f"     Resolusi Layar: {d.window_size()}")
