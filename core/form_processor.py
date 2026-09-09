@@ -9,6 +9,7 @@ from .config import (
     OUT_GAGAL,
 )
 from .csv_utils import append_to_log, remove_idpel_from_input_csv
+from .scanner import remove_id_from_scan_cache
 from .ui_helpers import (
     back_to_assignment_list,
     clear_search_box,
@@ -70,6 +71,7 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
             "keterangan": "Tidak ditemukan di tabel assignment"
         })
         remove_idpel_from_input_csv(csv_input_path, idpel)
+        remove_id_from_scan_cache(idpel)
         clear_search_box(d)
         return "IDPEL_NOT_FOUND"
 
@@ -856,8 +858,9 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
         "waktu_selesai": time.strftime("%Y-%m-%d %H:%M:%S")
     })
     
-    # Hapus dari CSV input
+    # Hapus dari CSV input dan cache scan
     remove_idpel_from_input_csv(csv_input_path, idpel)
+    remove_id_from_scan_cache(idpel)
 
     # Catat NIK valid & terpakai ke nik_valid.json dan hapus dari file stok JSON
     if fallback_nik_provider is not None:

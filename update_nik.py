@@ -53,6 +53,7 @@ from core.ui_helpers import (
 from core.scanner import (
     scan_all_assignments_from_hp,
     scan_all_meters_from_hp,
+    remove_id_from_scan_cache,
 )
 from core.form_processor import (
     process_update_nik,
@@ -321,12 +322,15 @@ def run_reverse_mode(target_device=None, custom_csv=None, is_pasca=False, enable
             )
             if status_hasil == "SUKSES":
                 sukses_count += 1
+                remove_id_from_scan_cache(idpel)
             elif status_hasil == "IDPEL_NOT_FOUND":
                 idpel_tidak_ada_count += 1
+                remove_id_from_scan_cache(idpel)
             elif status_hasil == "NIK_NOT_FOUND":
                 nik_tidak_ditemukan_count += 1
             else:
                 idpel_tidak_ada_count += 1
+                remove_id_from_scan_cache(idpel)
         except ApiLimitError as e:
             print_api_limit_banner()
             print(f"[X] PROSES REVERSE DIHENTIKAN: {e}")
@@ -443,12 +447,15 @@ def run_direct_random_mode(target_device=None, custom_json=None, is_pasca=True):
             )
             if status_hasil == "SUKSES":
                 sukses_count += 1
+                remove_id_from_scan_cache(item_id)
             elif status_hasil == "IDPEL_NOT_FOUND":
                 idpel_tidak_ada_count += 1
+                remove_id_from_scan_cache(item_id)
             elif status_hasil == "NIK_NOT_FOUND":
                 nik_tidak_ditemukan_count += 1
             else:
                 idpel_tidak_ada_count += 1
+                remove_id_from_scan_cache(item_id)
         except ApiLimitError as e:
             print_api_limit_banner()
             print(f"[X] PROSES DIRECT MODE {mode_num} DIHENTIKAN: {e}")

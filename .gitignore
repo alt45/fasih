@@ -33,6 +33,4 @@ ui_dump/
 scratch/
 logs/
 *.png
-nik.json
-nik_invalid.json
-nik_valid.json
+*.json

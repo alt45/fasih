@@ -37,6 +37,7 @@ from .ui_helpers import (
 from .scanner import (
     scan_all_assignments_from_hp,
     scan_all_meters_from_hp,
+    remove_id_from_scan_cache,
 )
 from .form_processor import (
     process_update_nik,
@@ -87,6 +88,7 @@ __all__ = [
     "safe_set_text",
     "scan_all_assignments_from_hp",
     "scan_all_meters_from_hp",
+    "remove_id_from_scan_cache",
     "process_update_nik",
     "FallbackNIKProvider",
     "is_daya_450",

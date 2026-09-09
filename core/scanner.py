@@ -105,7 +105,7 @@ def scan_all_assignments_from_hp(d, scan_by="auto"):
                 break
                 
     cache_file = "cache_scan.json"
-    if os.path.exists(cache_file):
+    if os.path.exists(cache_file) and os.path.getsize(cache_file) > 0:
         try:
             with open(cache_file, "r", encoding="utf-8") as f:
                 cache_data = json.load(f)
@@ -197,10 +197,9 @@ def scan_all_assignments_from_hp(d, scan_by="auto"):
             scroll_table_down(d)
 
         # Geser ke bagian paling bawah untuk memastikan footer dan pagination controls masuk ke layar
-        print("[*] Memeriksa bagian bawah halaman untuk kontrol navigasi / pagination...")
-        for _ in range(3):
-            d.swipe(x_center, int(win_h * 0.85), x_center, int(win_h * 0.40), duration=0.25)
-            time.sleep(0.3)
+        print("[*] Menggulir ke bagian bawah untuk mencapai navigasi / pagination...")
+        found_nav_btn = None
+        for _ in range(12):
             xml_bot = d.dump_hierarchy()
             # Ambil data sisa di bagian paling bawah jika ada
             if detected_type == "idpel":
@@ -225,6 +224,29 @@ def scan_all_assignments_from_hp(d, scan_by="auto"):
                 except Exception:
                     pass
 
+            next_page_num = current_page + 1
+
+            # Cari tombol target di footer (prioritaskan selector spesifik pagination)
+            candidates = [
+                d(description="Next"),
+                d(resourceId="example_next"),
+                d(description=str(next_page_num)),
+                d(text="Next"),
+            ]
+            for c in candidates:
+                if c.exists:
+                    b = c.info.get("bounds", {})
+                    if b.get("top", 0) > int(win_h * 0.40) and b.get("bottom", 0) < win_h - 10:
+                        found_nav_btn = c
+                        break
+
+            if found_nav_btn:
+                break
+
+            # Swipe cepat ke bawah (panjang)
+            d.swipe(x_center, int(win_h * 0.82), x_center, int(win_h * 0.18), duration=0.15)
+            time.sleep(0.35)
+
         next_page_num = current_page + 1
 
         # Jika footer terdeteksi dan has_more_pages False, berarti sudah di halaman terakhir
@@ -235,47 +257,58 @@ def scan_all_assignments_from_hp(d, scan_by="auto"):
         # Masih ada halaman berikutnya
         print(f"[*] Terdeteksi masih ada halaman berikutnya (Halaman {next_page_num}" + (f" dari total {total_known_entries} entri" if total_known_entries else "") + ")...")
         
+        old_footer = last_footer_text
         nav_clicked = False
-        # Strategi 1: Klik tombol nomor halaman langsung (misal "2", "3")
-        btn_target_page = d(text=str(next_page_num))
-        if btn_target_page.exists:
-            print(f"[*] Mengklik tombol nomor Halaman '{next_page_num}'...")
-            btn_target_page.click()
-            nav_clicked = True
-        
-        # Strategi 2: Jika tombol angka tidak ada, cari tombol "Next" / "Berikutnya"
-        if not nav_clicked:
-            for nav_text in ["Next", "Berikutnya"]:
-                btn_n = d(text=nav_text)
-                if not btn_n.exists:
-                    btn_n = d(textContains=nav_text)
-                if btn_n.exists:
-                    print(f"[*] Mengklik tombol '{nav_text}' untuk ke Halaman {next_page_num}...")
-                    btn_n.click()
-                    nav_clicked = True
-                    break
-
-        # Strategi 3: Coba scroll sedikit lagi jika belum tampak
-        if not nav_clicked:
-            d.swipe(x_center, int(win_h * 0.85), x_center, int(win_h * 0.45), duration=0.25)
-            time.sleep(0.5)
-            btn_target_page = d(text=str(next_page_num))
-            if btn_target_page.exists:
-                print(f"[*] Mengklik tombol nomor Halaman '{next_page_num}' setelah scroll...")
-                btn_target_page.click()
+        if found_nav_btn and found_nav_btn.exists:
+            print(f"[*] Mengklik tombol navigasi halaman ke Halaman {next_page_num}...")
+            try:
+                cx, cy = found_nav_btn.center()
+                d.click(cx, cy)
                 nav_clicked = True
-            else:
-                btn_next = d(text="Next")
-                if btn_next.exists:
-                    print(f"[*] Mengklik tombol 'Next' setelah scroll...")
-                    btn_next.click()
+            except Exception:
+                try:
+                    found_nav_btn.click()
                     nav_clicked = True
+                except:
+                    pass
+
+        if not nav_clicked:
+            # Fallback tombol Next atau nomor halaman di separuh bawah layar
+            for fallback in [d(text="Next"), d(text=str(next_page_num))]:
+                if fallback.exists:
+                    fb_bounds = fallback.info.get("bounds", {})
+                    if fb_bounds.get("top", 0) > int(win_h * 0.40):
+                        cx, cy = fallback.center()
+                        d.click(cx, cy)
+                        nav_clicked = True
+                        break
 
         if nav_clicked:
             time.sleep(2.5)
+            # Verifikasi apakah halaman BENAR-BENAR BERPINDAH dengan memeriksa footer
+            xml_verify = d.dump_hierarchy()
+            m_verify = re.search(pattern_footer, xml_verify, re.IGNORECASE)
+            new_footer = m_verify.group(0) if m_verify else ""
+            
+            # Jika footer masih sama persis, berarti halaman gagal berpindah!
+            if old_footer and new_footer == old_footer:
+                print(f"[⚠️] Halaman terdeteksi TIDAK BERPINDAH ({new_footer}). Mencoba klik ulang...")
+                # Coba klik sekali lagi
+                if found_nav_btn and found_nav_btn.exists:
+                    cx, cy = found_nav_btn.center()
+                    d.click(cx, cy)
+                    time.sleep(2.5)
+                    xml_verify2 = d.dump_hierarchy()
+                    m_verify2 = re.search(pattern_footer, xml_verify2, re.IGNORECASE)
+                    new_footer = m_verify2.group(0) if m_verify2 else ""
+
+            if old_footer and new_footer == old_footer:
+                print(f"[!] Halaman tetap tidak berpindah dari '{old_footer}'. Menghentikan scan multi-halaman untuk mencegah loop.")
+                break
+
             current_page += 1
             if current_page > 25:
-                print("[!] Mencapai batas maksimal 25 halaman. Pemindaian diakhiri demi keamanan.")
+                print("[!] Mencapai batas maksimal 25 halaman. Pemindaian diakhiri.")
                 break
         else:
             print(f"[!] Tombol navigasi ke Halaman {next_page_num} tidak ditemukan di layar. Pemindaian diakhiri.")
@@ -325,4 +358,31 @@ def scan_all_assignments_from_hp(d, scan_by="auto"):
 def scan_all_meters_from_hp(d, scan_by="auto"):
     """Fungsi pembungkus agar kompatibel dengan kode sebelumnya."""
     return scan_all_assignments_from_hp(d, scan_by=scan_by)
+
+
+def remove_id_from_scan_cache(item_id, cache_file="cache_scan.json"):
+    """
+    Menghapus item ID (ID Pelanggan / Nomor Meter) yang sudah selesai diproses dari cache_scan.json.
+    File cache akan berkurang secara realtime sehingga jika skrip dijalankan ulang,
+    data yang sudah selesai tidak akan diproses lagi.
+    """
+    if not item_id or not os.path.exists(cache_file):
+        return False
+    try:
+        with open(cache_file, "r", encoding="utf-8") as f:
+            cache_data = json.load(f)
+            
+        data_list = cache_data.get("data", [])
+        clean_target = str(item_id).strip()
+        
+        if clean_target in data_list:
+            data_list.remove(clean_target)
+            cache_data["data"] = data_list
+            with open(cache_file, "w", encoding="utf-8") as f:
+                json.dump(cache_data, f, indent=4)
+            print(f"[*] ID '{clean_target}' dihapus dari cache scan (Sisa antrean cache: {len(data_list)}).")
+            return True
+    except Exception as e:
+        pass
+    return False
 
