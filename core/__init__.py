@@ -5,6 +5,7 @@ from .config import (
     OUT_SUKSES,
     OUT_TIDAK_DITEMUKAN,
     OUT_NIK_TIDAK_DITEMUKAN,
+    OUT_BELUM_SURVEY,
     OUT_GAGAL,
 )
 from .device import (
@@ -66,6 +67,7 @@ __all__ = [
     "OUT_SUKSES",
     "OUT_TIDAK_DITEMUKAN",
     "OUT_NIK_TIDAK_DITEMUKAN",
+    "OUT_BELUM_SURVEY",
     "OUT_GAGAL",
     "get_connected_devices",
     "pilih_perangkat",

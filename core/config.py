@@ -6,5 +6,6 @@ CSV_DELIMITER = ";"               # Pemisah kolom CSV default
 OUT_SUKSES = "SUKSES_UPDATE_NIK.csv"
 OUT_TIDAK_DITEMUKAN = "IDPEL_TIDAK_DITEMUKAN.csv"
 OUT_NIK_TIDAK_DITEMUKAN = "NIK_TIDAK_DITEMUKAN.csv"
+OUT_BELUM_SURVEY = "BELUM_TERSURVEI_SKIP.csv"
 OUT_GAGAL = "NIK_GAGAL_UPDATE.csv"
 # =======================================================

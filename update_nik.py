@@ -23,6 +23,7 @@ from core.config import (
     OUT_SUKSES,
     OUT_TIDAK_DITEMUKAN,
     OUT_NIK_TIDAK_DITEMUKAN,
+    OUT_BELUM_SURVEY,
     OUT_GAGAL,
 )
 from core.device import (
@@ -301,6 +302,7 @@ def run_reverse_mode(target_device=None, custom_csv=None, is_pasca=False, enable
     sukses_count = 0
     idpel_tidak_ada_count = 0
     nik_tidak_ditemukan_count = 0
+    skipped_count = 0
     gagal_count = 0
 
     for idx, item in enumerate(antrean_eksekusi, start=1):
@@ -323,6 +325,8 @@ def run_reverse_mode(target_device=None, custom_csv=None, is_pasca=False, enable
             if status_hasil == "SUKSES":
                 sukses_count += 1
                 remove_id_from_scan_cache(idpel, device=d)
+            elif status_hasil == "SKIPPED_BELUM_SURVEY":
+                skipped_count += 1
             elif status_hasil == "IDPEL_NOT_FOUND":
                 idpel_tidak_ada_count += 1
                 remove_id_from_scan_cache(idpel, device=d)
@@ -358,6 +362,7 @@ def run_reverse_mode(target_device=None, custom_csv=None, is_pasca=False, enable
     print(f"  - Berhasil Diupdate     : {sukses_count} (Cek: '{OUT_SUKSES}')")
     print(f"  - IDPEL Tidak Ditemukan : {idpel_tidak_ada_count} (Cek: '{OUT_TIDAK_DITEMUKAN}')")
     print(f"  - NIK Tidak Ditemukan   : {nik_tidak_ditemukan_count} (Cek: '{OUT_NIK_TIDAK_DITEMUKAN}')")
+    print(f"  - Di-skip (Belum Survei): {skipped_count} (Cek: '{OUT_BELUM_SURVEY}')")
     print(f"  - Gagal / Galat         : {gagal_count} (Cek: '{OUT_GAGAL}')")
     print("=" * 65)
 
@@ -425,6 +430,7 @@ def run_direct_random_mode(target_device=None, custom_json=None, is_pasca=True):
     sukses_count = 0
     idpel_tidak_ada_count = 0
     nik_tidak_ditemukan_count = 0
+    skipped_count = 0
     gagal_count = 0
 
     for idx, item_id in enumerate(scanned_items, start=1):
@@ -448,6 +454,8 @@ def run_direct_random_mode(target_device=None, custom_json=None, is_pasca=True):
             if status_hasil == "SUKSES":
                 sukses_count += 1
                 remove_id_from_scan_cache(item_id, device=d)
+            elif status_hasil == "SKIPPED_BELUM_SURVEY":
+                skipped_count += 1
             elif status_hasil == "IDPEL_NOT_FOUND":
                 idpel_tidak_ada_count += 1
                 remove_id_from_scan_cache(item_id, device=d)
@@ -483,6 +491,7 @@ def run_direct_random_mode(target_device=None, custom_json=None, is_pasca=True):
     print(f"  - Berhasil Diupdate     : {sukses_count} (Cek: '{OUT_SUKSES}')")
     print(f"  - IDPEL/Meter Tidak Ada : {idpel_tidak_ada_count} (Cek: '{OUT_TIDAK_DITEMUKAN}')")
     print(f"  - NIK Gagal / 5x Acak   : {nik_tidak_ditemukan_count} (Cek: '{OUT_NIK_TIDAK_DITEMUKAN}')")
+    print(f"  - Di-skip (Belum Survei): {skipped_count} (Cek: '{OUT_BELUM_SURVEY}')")
     print(f"  - Gagal / Galat         : {gagal_count} (Cek: '{OUT_GAGAL}')")
     print("=" * 65)
 

@@ -6,6 +6,7 @@ from .config import (
     OUT_SUKSES,
     OUT_TIDAK_DITEMUKAN,
     OUT_NIK_TIDAK_DITEMUKAN,
+    OUT_BELUM_SURVEY,
     OUT_GAGAL,
 )
 from .csv_utils import append_to_log, remove_idpel_from_input_csv
@@ -245,6 +246,30 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
         print("[*] BLOK I (Pasca Bayar): Melewati 'Cek ID Pelanggan' sesuai konfigurasi...")
         time.sleep(0.5)
 
+    # === DETEKSI KUESIONER BELUM TERSURVEI (SKIP OTOMATIS) ===
+    # Pada data yang belum disurvei, muncul tombol 'Ambil Waktu', tidak ada tombol 'BERIKUTNYA BLOK II',
+    # dan yang ada adalah tombol 'Kirim'. Data ini tidak bisa diperbaiki NIK-nya dan harus di-skip.
+    has_ambil_waktu = d(text="Ambil Waktu").exists or d(textContains="Ambil Waktu").exists
+    has_next_b2 = d(text="BERIKUTNYA BLOK II").exists or d(resourceId="fasih-form-nav-next-button").exists
+    has_kirim = d(text="Kirim").exists or d(textMatches="(?i)^(kirim|submit)$").exists
+
+    if has_ambil_waktu and (not has_next_b2 or has_kirim):
+        print(f"\n[⚠️ SKIP] IDPEL {idpel} BELUM TERSURVEI!")
+        print("       (Terdeteksi tombol 'Ambil Waktu' & tidak ada tombol 'BERIKUTNYA BLOK II')")
+        print("[*] Melewati data ini dan membersihkannya dari antrean cache...")
+        append_to_log(OUT_BELUM_SURVEY, {
+            "id_pelanggan": idpel,
+            "NIK_Perbaikan": nik_baru,
+            "keterangan": "Belum tersurvei (ada tombol Ambil Waktu, tidak ada Blok II)",
+            "waktu": time.strftime("%Y-%m-%d %H:%M:%S")
+        })
+        remove_id_from_scan_cache(idpel, device=d)
+        remove_idpel_from_input_csv(csv_input_path, idpel)
+        print("[*] Membatalkan/menutup form dan kembali ke halaman Daftar Assignment...")
+        back_to_assignment_list(d)
+        clear_search_box(d)
+        return "SKIPPED_BELUM_SURVEY"
+
     # 9. Klik 'BERIKUTNYA BLOK II' (Hanya klik 1x -> Cek kata NIK di layar -> Jika belum ada, klik lagi)
     print("[*] Berpindah ke BLOK II...")
     in_blok2 = False
@@ -275,6 +300,21 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
             if not btn_next_b2.exists:
                 btn_next_b2 = d(text="BERIKUTNYA BLOK II")
 
+        # Cek sekunder jika setelah scroll ternyata terdeteksi tombol Kirim & Ambil Waktu
+        if not btn_next_b2.exists and (d(text="Ambil Waktu").exists or d(textContains="Ambil Waktu").exists):
+            print(f"\n[⚠️ SKIP] IDPEL {idpel} terdeteksi BELUM TERSURVEI setelah scroll!")
+            append_to_log(OUT_BELUM_SURVEY, {
+                "id_pelanggan": idpel,
+                "NIK_Perbaikan": nik_baru,
+                "keterangan": "Belum tersurvei (terdeteksi setelah scroll)",
+                "waktu": time.strftime("%Y-%m-%d %H:%M:%S")
+            })
+            remove_id_from_scan_cache(idpel, device=d)
+            remove_idpel_from_input_csv(csv_input_path, idpel)
+            back_to_assignment_list(d)
+            clear_search_box(d)
+            return "SKIPPED_BELUM_SURVEY"
+
         # KLIK HANYA 1 KALI (TIDAK DOUBLE CLICK)
         if btn_next_b2.exists:
             try:
@@ -285,12 +325,16 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
                 print(f"[*] Klik 1x logis tombol BERIKUTNYA...")
                 btn_next_b2.click()
         else:
-            # Fallback koordinat adaptif persentase layar (sudut kanan-bawah area navigasi)
-            w, h = d.window_size()
-            fb_x = int(w * 0.75)
-            fb_y = int(h * 0.94)
-            print(f"[*] Fallback: Klik 1x di area navigasi ({fb_x}, {fb_y})...")
-            d.click(fb_x, fb_y)
+            # Cegah klik buta jika ada tombol Kirim di layar agar tidak salah submit
+            if d(text="Kirim").exists or d(textMatches="(?i)^(kirim|submit)$").exists:
+                print("[!] Terdeteksi tombol 'Kirim' bukan 'BERIKUTNYA BLOK II'. Mengabaikan fallback klik demi keamanan.")
+            else:
+                # Fallback koordinat adaptif persentase layar (sudut kanan-bawah area navigasi)
+                w, h = d.window_size()
+                fb_x = int(w * 0.75)
+                fb_y = int(h * 0.94)
+                print(f"[*] Fallback: Klik 1x di area navigasi ({fb_x}, {fb_y})...")
+                d.click(fb_x, fb_y)
 
         # Beri jeda render DOM WebView agar uiautomator tidak membaca saat node sedang direbuild
         time.sleep(1.5)
