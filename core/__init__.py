@@ -38,6 +38,7 @@ from .scanner import (
     scan_all_assignments_from_hp,
     scan_all_meters_from_hp,
     remove_id_from_scan_cache,
+    get_cache_filename,
 )
 from .form_processor import (
     process_update_nik,
@@ -89,6 +90,7 @@ __all__ = [
     "scan_all_assignments_from_hp",
     "scan_all_meters_from_hp",
     "remove_id_from_scan_cache",
+    "get_cache_filename",
     "process_update_nik",
     "FallbackNIKProvider",
     "is_daya_450",

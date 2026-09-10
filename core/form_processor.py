@@ -71,7 +71,7 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
             "keterangan": "Tidak ditemukan di tabel assignment"
         })
         remove_idpel_from_input_csv(csv_input_path, idpel)
-        remove_id_from_scan_cache(idpel)
+        remove_id_from_scan_cache(idpel, device=d)
         clear_search_box(d)
         return "IDPEL_NOT_FOUND"
 
@@ -860,7 +860,7 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
     
     # Hapus dari CSV input dan cache scan
     remove_idpel_from_input_csv(csv_input_path, idpel)
-    remove_id_from_scan_cache(idpel)
+    remove_id_from_scan_cache(idpel, device=d)
 
     # Catat NIK valid & terpakai ke nik_valid.json dan hapus dari file stok JSON
     if fallback_nik_provider is not None:

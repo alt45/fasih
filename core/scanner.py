@@ -11,6 +11,39 @@ from .ui_helpers import (
 )
 
 
+def extract_wilayah_id(d, xml_content=None):
+    """
+    Mengekstrak ID / Kode Wilayah dari resource-id="wilayah1" pada layar aplikasi Fasih.
+    Contoh hasil: '525215052151DABMYTB'
+    """
+    # 1. Cek langsung via uiautomator selector
+    try:
+        w_el = d(resourceId="wilayah1")
+        if not w_el.exists:
+            w_el = d(resourceIdMatches=".*wilayah1$")
+        if w_el.exists:
+            txt = w_el.info.get("text", "").strip()
+            if txt:
+                return txt
+    except Exception:
+        pass
+
+    # 2. Cek lewat XML dump
+    try:
+        xml = xml_content or d.dump_hierarchy()
+        m1 = re.search(r'resource-id=["\'][^"\']*wilayah1["\'][^>]*text=["\']([^"\']+)["\']', xml)
+        if m1 and m1.group(1).strip():
+            return m1.group(1).strip()
+            
+        m2 = re.search(r'text=["\']([^"\']+)["\'][^>]*resource-id=["\'][^"\']*wilayah1["\']', xml)
+        if m2 and m2.group(1).strip():
+            return m2.group(1).strip()
+    except Exception:
+        pass
+
+    return None
+
+
 def scan_all_assignments_from_hp(d, scan_by="auto"):
     """
     Memindai seluruh penugasan (Nomor Meter 11 digit atau ID Pelanggan 12 digit) dari tabel assignment HP.
@@ -87,8 +120,18 @@ def scan_all_assignments_from_hp(d, scan_by="auto"):
     scroll_table_up(d, swipes=15)
     
     # === SMART CACHING LOGIC ===
-    # Ambil 5 ID pertama dari layar awal sebagai signature
     xml_first_screen = d.dump_hierarchy()
+    wilayah_id = extract_wilayah_id(d, xml_content=xml_first_screen)
+    
+    if wilayah_id:
+        print(f"[*] Terdeteksi Identitas Wilayah: '{wilayah_id}' (resource-id='wilayah1')")
+        cache_file = get_cache_filename(wilayah_id)
+    else:
+        cache_file = get_cache_filename(d)
+        
+    print(f"[*] Target file cache: '{cache_file}'")
+
+    # Ambil 5 ID pertama dari layar awal sebagai signature tambahan
     if detected_type == "idpel":
         sig_plus = re.findall(r'\+\s*(\d{12})', xml_first_screen)
         sig_all = [x for x in re.findall(r'\b\d{12}\b', xml_first_screen) if not x.startswith("0000")]
@@ -96,7 +139,6 @@ def scan_all_assignments_from_hp(d, scan_by="auto"):
     else:
         current_signature = re.findall(r'\b\d{11}\b', xml_first_screen)
     
-    # Ambil unik max 5
     sig_unique = []
     for s in current_signature:
         if s not in sig_unique:
@@ -104,35 +146,44 @@ def scan_all_assignments_from_hp(d, scan_by="auto"):
             if len(sig_unique) == 5:
                 break
                 
-    cache_file = "cache_scan.json"
     if os.path.exists(cache_file) and os.path.getsize(cache_file) > 0:
         try:
             with open(cache_file, "r", encoding="utf-8") as f:
                 cache_data = json.load(f)
                 
-            if cache_data.get("scan_type") == detected_type:
-                cached_ids = cache_data.get("data", [])
+            cached_ids = cache_data.get("data", [])
+            is_match = False
+            
+            # Jika wilayah_id cocok persis, langsung valid!
+            if wilayah_id and cache_data.get("wilayah_id") == wilayah_id:
+                is_match = True
+            else:
                 match_count = sum(1 for s in sig_unique if s in cached_ids)
-                
-                # Jika minimal 2 ID cocok, asumsikan ini daftar yang sama
                 if match_count >= 2:
-                    waktu_cache = cache_data.get("timestamp", "Tidak diketahui")
-                    total_cache = len(cached_ids)
+                    is_match = True
                     
-                    print(f"\n[INFO] Ditemukan file cache scan sebelumnya ({total_cache} data, diambil pada {waktu_cache}).")
-                    print(f"       (Kecocokan signature layar: {match_count}/{len(sig_unique)} ID cocok)")
-                    
-                    # Konfirmasi terminal
-                    while True:
-                        pilihan = input("Gunakan data cache ini untuk mempercepat proses tanpa scan ulang? (y/n): ").strip().lower()
-                        if pilihan in ['y', 'yes']:
-                            print("[✓] Menggunakan data dari cache. Mengabaikan pemindaian ulang.")
-                            return cached_ids
-                        elif pilihan in ['n', 'no']:
-                            print("[*] Memilih untuk scan ulang. Memulai pemindaian dari awal...")
-                            break
-                        else:
-                            print("[!] Pilihan tidak valid. Ketik 'y' atau 'n'.")
+            if is_match and cached_ids:
+                waktu_cache = cache_data.get("timestamp", "Tidak diketahui")
+                total_cache = len(cached_ids)
+                label_wilayah = f" Wilayah '{wilayah_id}'" if wilayah_id else ""
+                
+                print(f"\n[INFO] Ditemukan file cache scan{label_wilayah} ({total_cache} data tersisa, dibuat: {waktu_cache}).")
+                cached_dev = cache_data.get("device_serial")
+                current_dev = getattr(d, 'serial', '')
+                if cached_dev and current_dev and cached_dev != current_dev:
+                    print(f"       (Cache ini awalnya discan oleh HP: {cached_dev}, kini siap dilanjutkan di HP ini!)")
+                
+                # Konfirmasi terminal
+                while True:
+                    pilihan = input("Gunakan data cache ini untuk melanjutkan tanpa scan ulang? (y/n): ").strip().lower()
+                    if pilihan in ['y', 'yes']:
+                        print("[✓] Menggunakan data dari cache. Mengabaikan pemindaian ulang.")
+                        return cached_ids
+                    elif pilihan in ['n', 'no']:
+                        print("[*] Memilih untuk scan ulang. Memulai pemindaian dari awal...")
+                        break
+                    else:
+                        print("[!] Pilihan tidak valid. Ketik 'y' atau 'n'.")
         except Exception as e:
             print(f"[!] Gagal membaca {cache_file}: {e}")
     # === END SMART CACHING LOGIC ===
@@ -341,18 +392,43 @@ def scan_all_assignments_from_hp(d, scan_by="auto"):
 
     print(f"[✓] Berhasil mengumpulkan {len(collected)} {unit_label} unik dari seluruh halaman HP.")
     
+    cache_file = get_cache_filename(wilayah_id or d)
     try:
-        with open("cache_scan.json", "w", encoding="utf-8") as f:
+        with open(cache_file, "w", encoding="utf-8") as f:
             json.dump({
                 "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "wilayah_id": wilayah_id or "",
+                "device_serial": getattr(d, 'serial', 'unknown'),
                 "scan_type": detected_type,
                 "data": collected
             }, f, indent=4)
-        print("[*] Hasil scan berhasil disimpan ke 'cache_scan.json' untuk penggunaan selanjutnya.")
+        print(f"[*] Hasil scan berhasil disimpan ke '{cache_file}' untuk penggunaan selanjutnya.")
     except Exception as e:
         print(f"[!] Gagal menyimpan cache: {e}")
         
     return collected
+
+
+def get_cache_filename(device_or_wilayah=None):
+    """
+    Menghasilkan nama file cache berdasarkan kode wilayah (resource-id="wilayah1")
+    agar proses dapat dilanjutkan di HP lain untuk penugasan wilayah yang sama.
+    Contoh nama file: 'cache_scan_525215052151DABMYTB.json'
+    Jika wilayah tidak terdeteksi, fallback ke serial HP atau 'cache_scan.json'.
+    """
+    wilayah = None
+    if isinstance(device_or_wilayah, str) and device_or_wilayah.strip():
+        wilayah = device_or_wilayah.strip()
+    elif hasattr(device_or_wilayah, 'dump_hierarchy'):
+        # Coba ambil wilayah1 dari layar
+        wilayah = extract_wilayah_id(device_or_wilayah)
+        if not wilayah and hasattr(device_or_wilayah, 'serial'):
+            wilayah = device_or_wilayah.serial
+
+    if wilayah:
+        safe_name = re.sub(r'[\\/*?:"<>| ]', '_', str(wilayah))
+        return f"cache_scan_{safe_name}.json"
+    return "cache_scan.json"
 
 
 def scan_all_meters_from_hp(d, scan_by="auto"):
@@ -360,29 +436,47 @@ def scan_all_meters_from_hp(d, scan_by="auto"):
     return scan_all_assignments_from_hp(d, scan_by=scan_by)
 
 
-def remove_id_from_scan_cache(item_id, cache_file="cache_scan.json"):
+def remove_id_from_scan_cache(item_id, device=None, cache_file=None):
     """
-    Menghapus item ID (ID Pelanggan / Nomor Meter) yang sudah selesai diproses dari cache_scan.json.
-    File cache akan berkurang secara realtime sehingga jika skrip dijalankan ulang,
-    data yang sudah selesai tidak akan diproses lagi.
+    Menghapus item ID (ID Pelanggan / Nomor Meter) yang sudah selesai diproses dari cache scan.
+    Mendukung multi-device secara aman tanpa bentrok antar proses HP.
     """
-    if not item_id or not os.path.exists(cache_file):
+    if not item_id:
         return False
-    try:
-        with open(cache_file, "r", encoding="utf-8") as f:
-            cache_data = json.load(f)
-            
-        data_list = cache_data.get("data", [])
-        clean_target = str(item_id).strip()
         
-        if clean_target in data_list:
-            data_list.remove(clean_target)
-            cache_data["data"] = data_list
-            with open(cache_file, "w", encoding="utf-8") as f:
-                json.dump(cache_data, f, indent=4)
-            print(f"[*] ID '{clean_target}' dihapus dari cache scan (Sisa antrean cache: {len(data_list)}).")
-            return True
-    except Exception as e:
-        pass
-    return False
+    target_files = []
+    if cache_file:
+        target_files.append(cache_file)
+    elif device:
+        target_files.append(get_cache_filename(device))
+    else:
+        # Cari file cache_scan*.json di direktori saat ini
+        try:
+            import glob
+            target_files = glob.glob("cache_scan*.json")
+        except Exception:
+            target_files = ["cache_scan.json"]
+            
+    clean_target = str(item_id).strip()
+    removed_any = False
+    
+    for c_file in target_files:
+        if not os.path.exists(c_file) or os.path.getsize(c_file) == 0:
+            continue
+        try:
+            with open(c_file, "r", encoding="utf-8") as f:
+                cache_data = json.load(f)
+                
+            data_list = cache_data.get("data", [])
+            if clean_target in data_list:
+                data_list.remove(clean_target)
+                cache_data["data"] = data_list
+                with open(c_file, "w", encoding="utf-8") as f:
+                    json.dump(cache_data, f, indent=4)
+                print(f"[*] ID '{clean_target}' dihapus dari {c_file} (Sisa antrean: {len(data_list)}).")
+                removed_any = True
+        except Exception:
+            pass
+            
+    return removed_any
 
