@@ -332,6 +332,7 @@ def run_reverse_mode(target_device=None, custom_csv=None, is_pasca=False, enable
                 remove_id_from_scan_cache(idpel, device=d)
             elif status_hasil == "NIK_NOT_FOUND":
                 nik_tidak_ditemukan_count += 1
+                remove_id_from_scan_cache(idpel, device=d)
             else:
                 idpel_tidak_ada_count += 1
                 remove_id_from_scan_cache(idpel, device=d)
@@ -461,6 +462,7 @@ def run_direct_random_mode(target_device=None, custom_json=None, is_pasca=True):
                 remove_id_from_scan_cache(item_id, device=d)
             elif status_hasil == "NIK_NOT_FOUND":
                 nik_tidak_ditemukan_count += 1
+                remove_id_from_scan_cache(item_id, device=d)
             else:
                 idpel_tidak_ada_count += 1
                 remove_id_from_scan_cache(item_id, device=d)

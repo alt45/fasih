@@ -467,56 +467,92 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
         if not btn_cek_nik.exists:
             btn_cek_nik = d(resourceId="cek_nik").child(className="android.widget.Button")
 
-    if btn_cek_nik.exists:
-        cx, cy = btn_cek_nik.center()
-        print(f"[*] Mengklik sentuhan fisik pada tombol 'Cek NIK' di ({cx}, {cy})...")
-        d.click(cx, cy)
-        time.sleep(0.6)
-        # Penegasan sentuhan kedua untuk memastikan event onclick WebView terpicu
-        d.click(cx, cy)
-    else:
-        print("[*] Fallback koordinat fisik tombol 'Cek NIK' (99, 935)...")
-        d.click(99, 935)
-        time.sleep(0.6)
-        d.click(99, 935)
+    # Fungsi helper untuk eksekusi Cek NIK dengan retry 2x
+    def trigger_cek_nik_dan_pantau(label_nik="NIK", max_attempts=2):
+        nonlocal btn_cek_nik
+        hasil = "UNKNOWN"
+        for att in range(1, max_attempts + 1):
+            # Pastikan elemen tombol Cek NIK terdeteksi
+            if not btn_cek_nik.exists:
+                btn_cek_nik = d(text="Cek NIK")
+                if not btn_cek_nik.exists:
+                    btn_cek_nik = d(resourceId="cek_nik").child(className="android.widget.Button")
 
-    print("[*] Menunggu pemadanan NIK dari server (max 12 detik)...")
-    nik_match_result = "UNKNOWN"
-    for wait_sec in range(12):
-        time.sleep(1.0)
-        xml_chk = d.dump_hierarchy()
-        
-        # Deteksi API LIMIT terlebih dahulu!
-        api_limit_res = check_api_limit(d, xml_chk)
-        if api_limit_res:
-            print(f"[X] DETEKSI API LIMIT pada detik ke-{wait_sec+1}: Server mengembalikan respon 'API LIMIT'!")
-            print_api_limit_banner(api_limit_res.cooldown, api_limit_res.message)
-            cd_txt = f" (Waktu tunggu: {api_limit_res.cooldown})" if api_limit_res.cooldown else ""
-            raise ApiLimitError(f"IDPEL {idpel}: Server BPS mengembalikan 'API LIMIT'{cd_txt}. Perlu ganti akun!", cooldown_info=api_limit_res.cooldown)
+            if not btn_cek_nik.exists:
+                scroll_down_small(d)
+                time.sleep(0.5)
+                btn_cek_nik = d(text="Cek NIK")
+                if not btn_cek_nik.exists:
+                    btn_cek_nik = d(resourceId="cek_nik").child(className="android.widget.Button")
 
-        if d(textContains="TIDAK DITEMUKAN").exists or "TIDAK DITEMUKAN" in xml_chk:
-            nik_match_result = "TIDAK DITEMUKAN"
-            print(f"[!] Respon pemadanan terdeteksi pada detik ke-{wait_sec+1}: NIK TIDAK DITEMUKAN!")
-            break
-        elif d(textContains="SESUAI").exists or "SESUAI" in xml_chk or "DITEMUKAN" in xml_chk:
-            nik_match_result = "DITEMUKAN"
-            print(f"[OK] Respon pemadanan terdeteksi pada detik ke-{wait_sec+1}: NIK DITEMUKAN / SESUAI!")
-            break
+            if btn_cek_nik.exists:
+                cx, cy = btn_cek_nik.center()
+                print(f"[*] [{label_nik} | Cek {att}/{max_attempts}] Mengklik sentuhan fisik pada tombol 'Cek NIK' di ({cx}, {cy})...")
+                d.click(cx, cy)
+                time.sleep(0.6)
+                d.click(cx, cy)
+            else:
+                print(f"[*] [{label_nik} | Cek {att}/{max_attempts}] Fallback koordinat fisik tombol 'Cek NIK' (99, 935)...")
+                d.click(99, 935)
+                time.sleep(0.6)
+                d.click(99, 935)
 
-    if nik_match_result == "UNKNOWN":
-        api_limit_res = check_api_limit(d)
-        if api_limit_res:
-            print("[X] DETEKSI API LIMIT: Server BPS mengembalikan respon 'API LIMIT'!")
-            print_api_limit_banner(api_limit_res.cooldown, api_limit_res.message)
-            cd_txt = f" (Waktu tunggu: {api_limit_res.cooldown})" if api_limit_res.cooldown else ""
-            raise ApiLimitError(f"IDPEL {idpel}: Server BPS mengembalikan 'API LIMIT'{cd_txt}. Perlu ganti akun!", cooldown_info=api_limit_res.cooldown)
+            print(f"[*] [{label_nik} | Cek {att}/{max_attempts}] Menunggu pemadanan NIK dari server (max 12 detik)...")
+            hasil = "UNKNOWN"
+            for wait_sec in range(12):
+                time.sleep(1.0)
+                xml_chk = d.dump_hierarchy()
 
-    # Jika NIK TIDAK DITEMUKAN saat pemadanan:
-    if nik_match_result == "TIDAK DITEMUKAN":
+                # Deteksi API LIMIT terlebih dahulu!
+                api_limit_res = check_api_limit(d, xml_chk)
+                if api_limit_res:
+                    print(f"[X] DETEKSI API LIMIT pada detik ke-{wait_sec+1}: Server mengembalikan respon 'API LIMIT'!")
+                    print_api_limit_banner(api_limit_res.cooldown, api_limit_res.message)
+                    cd_txt = f" (Waktu tunggu: {api_limit_res.cooldown})" if api_limit_res.cooldown else ""
+                    raise ApiLimitError(f"IDPEL {idpel}: Server BPS mengembalikan 'API LIMIT'{cd_txt}. Perlu ganti akun!", cooldown_info=api_limit_res.cooldown)
+
+                xml_lower = xml_chk.lower()
+                is_connection_error = any(err_kw in xml_lower for err_kw in [
+                    "kesalahan mengambil data", "tidak ada koneksi", "koneksi terputus",
+                    "gagal memuat data", "koneksi internet bermasalah", "galat koneksi", "terjadi kesalahan"
+                ])
+
+                # Deteksi jika respon TIDAK DITEMUKAN
+                if d(textContains="TIDAK DITEMUKAN").exists or "TIDAK DITEMUKAN" in xml_chk:
+                    hasil = "TIDAK DITEMUKAN"
+                    print(f"[!] [{label_nik} | Cek {att}/{max_attempts}] Respon terdeteksi pada detik ke-{wait_sec+1}: NIK TIDAK DITEMUKAN!")
+                    break
+
+                # Deteksi jika respon SESUAI / DITEMUKAN (HIJAU)
+                if d(textContains="SESUAI").exists or "SESUAI" in xml_chk or "DITEMUKAN" in xml_chk:
+                    hasil = "DITEMUKAN"
+                    print(f"[OK] [{label_nik} | Cek {att}/{max_attempts}] Respon terdeteksi pada detik ke-{wait_sec+1}: NIK DITEMUKAN / SESUAI (HIJAU)!")
+                    return hasil
+
+                # Deteksi jika ada gangguan koneksi/server
+                if is_connection_error:
+                    hasil = "KONEKSI_ERROR"
+                    print(f"[!] [{label_nik} | Cek {att}/{max_attempts}] Terdeteksi gangguan koneksi/server ('kesalahan mengambil data') pada detik ke-{wait_sec+1}!")
+                    break
+
+            if hasil == "DITEMUKAN":
+                return "DITEMUKAN"
+
+            if att < max_attempts:
+                print(f"[*] NIK belum hijau/ditemukan ({hasil}). Melakukan pengecekan ulang tombol 'Cek NIK' (Percobaan {att+1}/{max_attempts})...")
+                time.sleep(1.5)
+
+        return hasil
+
+    # 10. Eksekusi Cek NIK awal (dengan retry 2x jika belum hijau / koneksi lambat)
+    nik_match_result = trigger_cek_nik_dan_pantau(label_nik=f"NIK Awal {nik_baru}", max_attempts=2)
+
+    # Jika NIK awal belum cocok / tidak ditemukan / error pemadanan:
+    if nik_match_result != "DITEMUKAN":
         daya = str(row_data.get("daya", "")).strip()
 
-        # Jika NIK awal berasal dari provider (misal Mode 6), hapus dari stok dan arsipkan
-        if fallback_nik_provider is not None:
+        # Jika NIK awal berasal dari provider (misal Mode 6) dan ternyata TIDAK DITEMUKAN, arsipkan ke invalid
+        if fallback_nik_provider is not None and nik_match_result == "TIDAK DITEMUKAN":
             fallback_nik_provider.record_invalid(nik_baru, reason="TIDAK DITEMUKAN")
         
         # Cek apakah fallback NIK aktif dan daya pelanggan diperbolehkan untuk fallback (bukan daya 450)
@@ -550,80 +586,60 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
                     hide_keyboard(d)
                     time.sleep(1.0)
                     
-                    # Klik Cek NIK ulang
-                    if btn_cek_nik.exists:
-                        cx, cy = btn_cek_nik.center()
-                        print(f"[*] Mengklik 'Cek NIK' ulang di ({cx}, {cy})...")
-                        d.click(cx, cy)
-                        time.sleep(0.6)
-                        d.click(cx, cy)
-                    else:
-                        d.click(99, 935)
-                        time.sleep(0.6)
-                        d.click(99, 935)
-                    
-                    print(f"[*] Menunggu pemadanan Fallback NIK acak ke-{attempt} (max 12 detik)...")
-                    fallback_match = "UNKNOWN"
-                    for wait_fb in range(12):
-                        time.sleep(1.0)
-                        xml_chk_fb = d.dump_hierarchy()
-                        
-                        # Deteksi API LIMIT terlebih dahulu!
-                        api_limit_res = check_api_limit(d, xml_chk_fb)
-                        if api_limit_res:
-                            print(f"[X] DETEKSI API LIMIT pada detik ke-{wait_fb+1} (Fallback {attempt}/5): Server mengembalikan 'API LIMIT'!")
-                            print_api_limit_banner(api_limit_res.cooldown, api_limit_res.message)
-                            cd_txt = f" (Waktu tunggu: {api_limit_res.cooldown})" if api_limit_res.cooldown else ""
-                            raise ApiLimitError(f"IDPEL {idpel}: Server BPS mengembalikan 'API LIMIT'{cd_txt}. Perlu ganti akun!", cooldown_info=api_limit_res.cooldown)
+                    # Panggil Cek NIK ulang (dengan retry 2x jika perlu)
+                    fallback_res = trigger_cek_nik_dan_pantau(label_nik=f"Fallback {attempt}/5 ({fallback_nik})", max_attempts=2)
 
-                        if d(textContains="TIDAK DITEMUKAN").exists or "TIDAK DITEMUKAN" in xml_chk_fb:
-                            print(f"[!] Percobaan {attempt}/5: Fallback NIK {fallback_nik} TIDAK DITEMUKAN (detik ke-{wait_fb+1}).")
-                            fallback_match = "TIDAK DITEMUKAN"
-                            # Hapus dari stok NIK aktif & arsipkan ke nik_invalid.json
-                            fallback_nik_provider.record_invalid(fallback_nik, reason="TIDAK DITEMUKAN")
-                            break
-                        elif d(textContains="SESUAI").exists or "SESUAI" in xml_chk_fb or "DITEMUKAN" in xml_chk_fb:
-                            print(f"[OK] Percobaan {attempt}/5: Fallback NIK {fallback_nik} SESUAI / DITEMUKAN (detik ke-{wait_fb+1})!")
-                            nik_baru = fallback_nik
-                            nik_match_result = "DITEMUKAN"
-                            fallback_match = "DITEMUKAN"
-                            break
-                    
-                    if fallback_match == "UNKNOWN":
-                        api_limit_res = check_api_limit(d)
-                        if api_limit_res:
-                            print("[X] DETEKSI API LIMIT: Server BPS mengembalikan respon 'API LIMIT'!")
-                            print_api_limit_banner(api_limit_res.cooldown, api_limit_res.message)
-                            cd_txt = f" (Waktu tunggu: {api_limit_res.cooldown})" if api_limit_res.cooldown else ""
-                            raise ApiLimitError(f"IDPEL {idpel}: Server BPS mengembalikan 'API LIMIT'{cd_txt}. Perlu ganti akun!", cooldown_info=api_limit_res.cooldown)
-
-                    if fallback_match == "DITEMUKAN":
+                    if fallback_res == "DITEMUKAN":
+                        nik_baru = fallback_nik
+                        nik_match_result = "DITEMUKAN"
                         break
                     else:
+                        if fallback_res == "TIDAK DITEMUKAN":
+                            fallback_nik_provider.record_invalid(fallback_nik, reason="TIDAK DITEMUKAN")
                         if attempt < 5:
-                            print(f"[*] Percobaan {attempt}/5 belum cocok, bersiap mencoba NIK acak berikutnya ({attempt+1}/5)...")
+                            print(f"[*] Percobaan {attempt}/5 belum cocok ({fallback_res}), bersiap mencoba NIK acak berikutnya ({attempt+1}/5)...")
                         else:
                             print(f"[!] Sudah mencoba 5 kali NIK acak dari {json_name} dan seluruhnya TIDAK DITEMUKAN. Mengabaikan IDPEL ini...")
 
-    # Jika setelah evaluasi fallback NIK tetap TIDAK DITEMUKAN:
-    if nik_match_result == "TIDAK DITEMUKAN":
+    # === EVALUASI MUTLAK: JIKA NIK TIDAK HIJAU / BUKAN 'DITEMUKAN', JANGAN SEKALI-KALI KLIK KIRIM! ===
+    if nik_match_result != "DITEMUKAN":
         daya = str(row_data.get("daya", "")).strip()
         if is_daya_450(daya):
-            ket_log = f"NIK Tidak Ditemukan (Daya 450: {daya})"
+            ket_log = f"NIK Tidak Ditemukan/Hijau (Daya 450: {daya})"
         elif fallback_nik_provider is not None and daya:
-            ket_log = f"NIK Awal & 5x Fallback Acak Tidak Ditemukan (Daya: {daya})"
+            ket_log = f"NIK Awal & 5x Fallback Acak Tidak Ditemukan/Hijau (Daya: {daya})"
         else:
-            ket_log = "NIK Tidak Ditemukan saat pemadanan"
+            ket_log = f"NIK Tidak Ditemukan/Hijau saat pemadanan ({nik_match_result})"
 
-        print(f"[!] Pemadanan Gagal: NIK {nik_baru} untuk IDPEL {idpel} TIDAK DITEMUKAN.")
-        print(f"[*] Mencatat ke '{OUT_NIK_TIDAK_DITEMUKAN}' dan menghapus dari '{csv_input_path}'...")
-        append_to_log(OUT_NIK_TIDAK_DITEMUKAN, {
-            "id_pelanggan": idpel,
-            "NIK_Perbaikan": nik_baru,
-            "keterangan": ket_log,
-            "waktu": time.strftime("%Y-%m-%d %H:%M:%S")
-        })
-        remove_idpel_from_input_csv(csv_input_path, idpel)
+        print(f"\n[!] ========================================================")
+        print(f"[!] PEMADANAN GAGAL / NIK TIDAK HIJAU: IDPEL {idpel}")
+        print(f"[!] NIK Terakhir : {nik_baru}")
+        print(f"[!] Status Hasil : {nik_match_result}")
+        print(f"[!] PERINGATAN: Tombol 'Kirim' TIDAK AKAN ditekan demi keamanan data!")
+        print(f"[!] Membersihkan data dari antrean cache & melewati IDPEL ini...")
+        print(f"[!] ========================================================\n")
+
+        # Hapus ID dari antrean cache scan agar proses lain / scan berikutnya bisa lanjut
+        remove_id_from_scan_cache(idpel, device=d)
+
+        if nik_match_result == "TIDAK DITEMUKAN":
+            print(f"[*] Mencatat ke '{OUT_NIK_TIDAK_DITEMUKAN}' dan menghapus dari '{csv_input_path}'...")
+            append_to_log(OUT_NIK_TIDAK_DITEMUKAN, {
+                "id_pelanggan": idpel,
+                "NIK_Perbaikan": nik_baru,
+                "keterangan": ket_log,
+                "waktu": time.strftime("%Y-%m-%d %H:%M:%S")
+            })
+            remove_idpel_from_input_csv(csv_input_path, idpel)
+        else:
+            print(f"[!] Kendala koneksi atau server BPS lambat ('{nik_match_result}'). Mencatat ke '{OUT_GAGAL}'...")
+            append_to_log(OUT_GAGAL, {
+                "id_pelanggan": idpel,
+                "NIK_Perbaikan": nik_baru,
+                "error": f"Pemadanan NIK gagal/tidak hijau ({nik_match_result}) - kendala koneksi/server BPS",
+                "waktu": time.strftime("%Y-%m-%d %H:%M:%S")
+            })
+
         print("[*] Membatalkan pengisian form dan kembali ke halaman Daftar Assignment...")
         back_to_assignment_list(d)
         clear_search_box(d)
