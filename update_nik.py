@@ -113,6 +113,7 @@ def run_forward_mode(target_device=None, custom_csv=None):
     sukses_count = 0
     idpel_tidak_ada_count = 0
     nik_tidak_ditemukan_count = 0
+    skipped_count = 0
     gagal_count = 0
 
     for idx, item in enumerate(data_list, start=1):
@@ -124,6 +125,8 @@ def run_forward_mode(target_device=None, custom_csv=None):
             status_hasil = process_update_nik(d, item, target_csv)
             if status_hasil == "SUKSES":
                 sukses_count += 1
+            elif status_hasil == "SKIPPED_BELUM_SURVEY":
+                skipped_count += 1
             elif status_hasil == "IDPEL_NOT_FOUND":
                 idpel_tidak_ada_count += 1
             elif status_hasil == "NIK_NOT_FOUND":
@@ -157,6 +160,7 @@ def run_forward_mode(target_device=None, custom_csv=None):
     print(f"  - Berhasil Diupdate     : {sukses_count} (Cek: '{OUT_SUKSES}')")
     print(f"  - IDPEL Tidak Ditemukan : {idpel_tidak_ada_count} (Cek: '{OUT_TIDAK_DITEMUKAN}')")
     print(f"  - NIK Tidak Ditemukan   : {nik_tidak_ditemukan_count} (Cek: '{OUT_NIK_TIDAK_DITEMUKAN}')")
+    print(f"  - Di-skip (Belum Survei): {skipped_count} (Cek: '{OUT_BELUM_SURVEY}')")
     print(f"  - Gagal / Galat         : {gagal_count} (Cek: '{OUT_GAGAL}')")
     print("=" * 60)
 

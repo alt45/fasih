@@ -181,10 +181,63 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
 
     # 8. BLOK I: Verifikasi halaman terbuka, Geser layar agar Cek ID Pelanggan terangkat, & Klik
     print("[*] Menunggu halaman BLOK I termuat...")
-    for _ in range(20):
-        if d(text="Cek ID Pelanggan").exists or d(text="BERIKUTNYA BLOK II").exists or d(textContains="ID pelanggan").exists or d(textContains="BLOK I").exists:
+    for _ in range(25):
+        if (
+            d(text="Cek ID Pelanggan").exists
+            or d(text="BERIKUTNYA BLOK II").exists
+            or d(textContains="ID pelanggan").exists
+            or d(textContains="BLOK I").exists
+            or d(text="Ambil Waktu").exists
+            or d(textContains="Ambil Waktu").exists
+        ):
             break
         time.sleep(0.3)
+
+    # === DETEKSI KUESIONER BELUM TERSURVEI DI BLOK I (SKIP OTOMATIS SEBELUM CEK APAPUN) ===
+    # Pada data yang belum disurvei, muncul tombol 'Ambil Waktu' di BLOK I.
+    # Data ini belum disurvei di lapangan sehingga NIK tidak dapat diperbaiki.
+    # Wajib di-skip langsung dan beralih ke IDPEL lain (seperti pada Menu Pasca / Menu 6).
+    xml_blok1 = ""
+    try:
+        xml_blok1 = d.dump_hierarchy()
+    except Exception:
+        pass
+    xml_lower = xml_blok1.lower()
+
+    has_ambil_waktu = (
+        d(text="Ambil Waktu").exists
+        or d(textContains="Ambil Waktu").exists
+        or d(description="Ambil Waktu").exists
+        or d(descriptionContains="Ambil Waktu").exists
+        or ("ambil waktu" in xml_lower)
+    )
+    has_next_b2 = (
+        d(text="BERIKUTNYA BLOK II").exists
+        or d(resourceId="fasih-form-nav-next-button").exists
+        or ("berikutnya blok ii" in xml_lower)
+    )
+    has_kirim = (
+        d(text="Kirim").exists
+        or d(textMatches="(?i)^(kirim|submit)$").exists
+        or bool(re.search(r'>\s*(?:kirim|submit)\s*<', xml_blok1, re.IGNORECASE))
+    )
+
+    if has_ambil_waktu or (has_kirim and not has_next_b2 and not d(text="Cek ID Pelanggan").exists):
+        print(f"\n[⚠️ SKIP] IDPEL {idpel} BELUM TERSURVEI!")
+        print("       (Terdeteksi tombol 'Ambil Waktu' di BLOK I - kuesioner belum disurvei)")
+        print("[*] Melewati data ini dan membersihkannya dari antrean cache...")
+        append_to_log(OUT_BELUM_SURVEY, {
+            "id_pelanggan": idpel,
+            "NIK_Perbaikan": nik_baru,
+            "keterangan": "Belum tersurvei (terdeteksi tombol Ambil Waktu di Blok I)",
+            "waktu": time.strftime("%Y-%m-%d %H:%M:%S")
+        })
+        remove_id_from_scan_cache(idpel, device=d)
+        remove_idpel_from_input_csv(csv_input_path, idpel)
+        print("[*] Membatalkan/menutup form dan kembali ke halaman Daftar Assignment...")
+        back_to_assignment_list(d)
+        clear_search_box(d)
+        return "SKIPPED_BELUM_SURVEY"
 
     if not skip_cek_idpel:
         # Pastikan posisi tombol 'Cek ID Pelanggan' tidak terhimpit di batas bawah layar.
@@ -216,6 +269,29 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
             btn_cek_idpel = d(text="Cek ID Pelanggan")
 
         if not btn_cek_idpel or not btn_cek_idpel.exists:
+            # Cek sekali lagi apakah kuesioner belum tersurvei terdeteksi setelah scroll
+            is_uncompleted = (
+                d(textContains="Ambil Waktu").exists
+                or d(descriptionContains="Ambil Waktu").exists
+                or d(text="Kirim").exists
+                or "ambil waktu" in d.dump_hierarchy().lower()
+            )
+            if is_uncompleted:
+                print(f"\n[⚠️ SKIP] IDPEL {idpel} BELUM TERSURVEI!")
+                print("       (Terdeteksi 'Ambil Waktu'/'Kirim' & tombol Cek ID Pelanggan tidak ada)")
+                print("[*] Melewati data ini dan membersihkannya dari antrean cache...")
+                append_to_log(OUT_BELUM_SURVEY, {
+                    "id_pelanggan": idpel,
+                    "NIK_Perbaikan": nik_baru,
+                    "keterangan": "Belum tersurvei (Cek ID Pelanggan tidak ada, terdeteksi Ambil Waktu/Kirim)",
+                    "waktu": time.strftime("%Y-%m-%d %H:%M:%S")
+                })
+                remove_id_from_scan_cache(idpel, device=d)
+                remove_idpel_from_input_csv(csv_input_path, idpel)
+                back_to_assignment_list(d)
+                clear_search_box(d)
+                return "SKIPPED_BELUM_SURVEY"
+
             raise Exception("Gagal masuk ke BLOK I / Tombol 'Cek ID Pelanggan' tidak ditemukan.")
 
         # Ambil koordinat fisik tombol untuk sentuhan langsung (menjamin event onclick WebView terpemicu)
@@ -245,30 +321,6 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
     else:
         print("[*] BLOK I (Pasca Bayar): Melewati 'Cek ID Pelanggan' sesuai konfigurasi...")
         time.sleep(0.5)
-
-    # === DETEKSI KUESIONER BELUM TERSURVEI (SKIP OTOMATIS) ===
-    # Pada data yang belum disurvei, muncul tombol 'Ambil Waktu', tidak ada tombol 'BERIKUTNYA BLOK II',
-    # dan yang ada adalah tombol 'Kirim'. Data ini tidak bisa diperbaiki NIK-nya dan harus di-skip.
-    has_ambil_waktu = d(text="Ambil Waktu").exists or d(textContains="Ambil Waktu").exists
-    has_next_b2 = d(text="BERIKUTNYA BLOK II").exists or d(resourceId="fasih-form-nav-next-button").exists
-    has_kirim = d(text="Kirim").exists or d(textMatches="(?i)^(kirim|submit)$").exists
-
-    if has_ambil_waktu and (not has_next_b2 or has_kirim):
-        print(f"\n[⚠️ SKIP] IDPEL {idpel} BELUM TERSURVEI!")
-        print("       (Terdeteksi tombol 'Ambil Waktu' & tidak ada tombol 'BERIKUTNYA BLOK II')")
-        print("[*] Melewati data ini dan membersihkannya dari antrean cache...")
-        append_to_log(OUT_BELUM_SURVEY, {
-            "id_pelanggan": idpel,
-            "NIK_Perbaikan": nik_baru,
-            "keterangan": "Belum tersurvei (ada tombol Ambil Waktu, tidak ada Blok II)",
-            "waktu": time.strftime("%Y-%m-%d %H:%M:%S")
-        })
-        remove_id_from_scan_cache(idpel, device=d)
-        remove_idpel_from_input_csv(csv_input_path, idpel)
-        print("[*] Membatalkan/menutup form dan kembali ke halaman Daftar Assignment...")
-        back_to_assignment_list(d)
-        clear_search_box(d)
-        return "SKIPPED_BELUM_SURVEY"
 
     # 9. Klik 'BERIKUTNYA BLOK II' (Hanya klik 1x -> Cek kata NIK di layar -> Jika belum ada, klik lagi)
     print("[*] Berpindah ke BLOK II...")
