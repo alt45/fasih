@@ -1,140 +1,209 @@
 # Otomasi Kuesioner & Perbaikan Data Fasih BPS (Android Automation)
 
-Aplikasi otomasi berbasis Python untuk melakukan pengisian kuesioner tugas pencacahan serta **perbaikan/pembaruan data NIK** pada aplikasi **Fasih BPS** (`id.go.bpsfasih`) di perangkat Android secara otomatis menggunakan data dari file CSV.
+Aplikasi otomasi cerdas berbasis Python dan `uiautomator2` untuk melakukan pengisian kuesioner tugas pencacahan baru serta **perbaikan/pembaruan massal data NIK pelanggan** pada aplikasi **Fasih BPS** (`id.go.bpsfasih`) di perangkat Android secara otomatis, aman, dan efisien.
 
 ---
 
-## Fitur Utama
+## Daftar Isi
+- [Fitur Utama & 7 Mode Operasi](#fitur-utama--7-mode-operasi)
+- [Fitur Keamanan & Keandalan Terbaru](#fitur-keamanan--keandalan-terbaru)
+- [Persyaratan Sistem](#persyaratan-sistem)
+- [Instalasi & Persiapan](#instalasi--persiapan)
+- [Format Data Masukan (CSV & JSON)](#format-data-masukan-csv--json)
+- [Panduan Menjalankan Aplikasi](#panduan-menjalankan-aplikasi)
+- [Manajemen Stok NIK & Logging](#manajemen-stok-nik--logging)
+- [Struktur Repositori](#struktur-repositori)
 
-Aplikasi ini memiliki 2 mode operasi utama yang dapat dipilih melalui menu interaktif:
+---
 
-### 1. Penambahan Data Baru (`main.py`)
-- **Alur Penuh Tambah Assignment:** Pengisian kuesioner dari awal untuk ID Pelanggan yang belum tercatat (pengambilan GPS, foto galeri acak, pengisian Blok II, Blok III, hingga Blok IV Jam Selesai & Kirim).
-- **Pembersihan Nama Pintar:** Sanitasi karakter khusus dan tanda baca agar sesuai aturan validasi aplikasi.
-- **Log Pelacakan:** Data sukses dicatat ke `BERHASIL_KIRIM.csv` dan otomatis dihapus dari file sumber (`HENGKI.csv`).
+## Fitur Utama & 7 Mode Operasi
 
-### 2. Perbaikan / Update Data NIK (Forward Mode: CSV -> Cari di HP)
-- **Pencarian Assignment:** Menginput ID Pelanggan dari CSV di kolom *Search* pada tabel penugasan.
-- **Penanganan IDPEL Tidak Ditemukan:** Otomatis dicatat ke `IDPEL_TIDAK_DITEMUKAN.csv` dan dilewati tanpa macet.
-- **Validasi BLOK I & II:** Verifikasi ID Pelanggan, berpindah ke Blok II (1x klik adaptif dengan verifikasi kata NIK), mengetik NIK baru, dan memicu tombol fisik Cek NIK.
-- **Pemadanan & Submit:** Memverifikasi status pemadanan server BPS (DITEMUKAN vs TIDAK DITEMUKAN), mengecek galat (harus `GALAT 0`), submit, cek antrean upload `SUCCESS`, dan kembali ke Daftar Assignment.
+Aplikasi menyediakan **7 mode operasi** yang dapat dipilih langsung melalui menu interaktif utama (`python main.py`):
 
-### 3. Pengeditan Data Terbalik (Reverse Mode: Pindai HP -> Cocokkan Master)
-- **Sangat Cepat untuk Master CSV Besar:** Jika file master berisi ribuan data (misal 5.000 - 13.000 baris) sedangkan di HP hanya ada puluhan penugasan, mode ini memindai seluruh nomor meter/IDPEL di HP terlebih dahulu.
-- **Show 100 entries Otomatis:** Membuka seluruh penugasan dalam 1 halaman utuh tanpa pagination.
-- **Pencocokan Instan:** Mencocokkan data HP dengan file master (`mastermeter.csv` atau `master.csv`) di memori dalam hitungan milidetik.
-- **Eksekusi Terarah:** Hanya mengeksekusi penugasan yang memang cocok dan memerlukan perbaikan NIK.
+| Mode | Nama Mode | Deskripsi Singkat | Sumber Data |
+| :---: | :--- | :--- | :--- |
+| **[1]** | **Penambahan Data Baru** (`tambah`) | Pengisian kuesioner baru dari awal (pengambilan GPS, foto galeri acak, Blok II, Blok III, hingga Blok IV Jam Selesai & Kirim). | CSV (`HENGKI.csv`) |
+| **[2]** | **Pengeditan Data (Forward)** (`edit`) | Mengambil ID Pelanggan satu per satu dari CSV, mencari di kolom Search HP, lalu mengganti NIK. | CSV Custom |
+| **[3]** | **Pengeditan Data Terbalik (Reverse Prabayar)** (`reverse`) | Memindai nomor meter/IDPEL di HP terlebih dahulu, lalu mencocokkan secara instan dengan CSV master di memori. | HP + Master CSV |
+| **[4]** | **Pengeditan Data Pasca Bayar (Reverse)** (`pasca`) | Mirip Mode 3 khusus Pasca Bayar: otomatis melewati Cek IDPEL di BLOK I dan langsung memproses BLOK II. | HP + Master CSV Pasca |
+| **[5]** | **Pasca Bayar + Daya & Fallback NIK** (`pascadaya`) | Melewati BLOK I. Jika NIK utama gagal dan daya pelanggan **bukan 450 VA** (900 VA ke atas), sistem otomatis mencari NIK cadangan dari stok JSON. Daya 450 tidak difallback demi kepatuhan aturan. | HP + Master CSV + JSON |
+| **[6]** | **Pasca Bayar Direct HP (Acak NIK JSON Tanpa CSV)** (`direct`) | Memindai seluruh IDPEL di HP (multi-halaman >100 entri). Melewati BLOK I, mengisi NIK acak dari file JSON, coba hingga 5x jika tidak cocok. | HP + File JSON Stok |
+| **[7]** | **Prabayar Direct HP (Acak NIK JSON Tanpa CSV)** (`direct_pra`) | Memindai penugasan di HP. Menjalankan Cek IDPEL di BLOK I, lalu mengisi NIK acak dari file JSON di BLOK II. Coba hingga 5x jika tidak cocok. | HP + File JSON Stok |
+
+---
+
+## Fitur Keamanan & Keandalan Terbaru
+
+### 1. Smart Caching Wilayah (`cache/cache_scan_<wilayah1>.json`)
+- **Penyimpanan Terorganisir di Subfolder:** Seluruh berkas cache hasil pemindaian penugasan HP disimpan di dalam subfolder `cache/` (misalnya `cache/cache_scan_525215052151DABMYTB.json`).
+- **Dinamis Berbasis Identitas Wilayah:** File cache dinamai berdasarkan `resource-id="wilayah1"` pada layar aplikasi. Jika suatu wilayah sedang diproses, HP lain dapat langsung melanjutkan antrean tanpa perlu memindai ulang.
+- **Proteksi Antrean Cache:** Item ID **TIDAK AKAN DIHAPUS** dari cache jika terjadi gangguan koneksi, timeout server, atau terkena Limit API, sehingga data tetap aman dan dapat diproses kembali setelah koneksi stabil atau setelah berganti akun.
+
+### 2. Deteksi & Auto-Skip Kuesioner Belum Tersurvei
+- Pada kuesioner yang belum pernah disurvei di lapangan, halaman BLOK I menampilkan tombol *"Ambil Waktu"* dan langsung tombol *"Kirim"*, tanpa adanya tombol *"BERIKUTNYA BLOK II"*.
+- Sistem mendeteksi kondisi ini secara otomatis, membatalkan form, mencatat ke `BELUM_TERSURVEI_SKIP.csv`, dan membersihkan item dari antrean cache agar tidak menghambat penugasan lainnya.
+
+### 3. Logika Cek NIK Cerdas & Retry 2x
+- **Jika `DITEMUKAN` (Hijau):** Pemadanan sukses, langsung lanjut ke konfirmasi simpan dan kirim.
+- **Jika `TIDAK DITEMUKAN`:** Server Dukcapil merespon secara valid bahwa NIK tidak terdaftar. Sistem **tidak mengulang** tombol Cek NIK pada NIK yang sama, melainkan langsung mencoba NIK cadangan lain (fallback acak) jika mode fallback aktif.
+- **Jika Kendala Koneksi / Timeout / *"Kesalahan Mengambil Data"*:** Sistem mengulangi penekanan tombol **Cek NIK sekali lagi (Retry ke-2)**. Jika masih gagal karena koneksi, IDPEL di-skip tanpa kirim dan cache scan dipertahankan.
+- **Proteksi Mutlak Anti-Kirim:** Tombol *"Kirim"* **MUTLAK DIBLOKIR** jika NIK belum berstatus `DITEMUKAN` (Hijau), mencegah risiko pengiriman data dengan NIK merah/invalid.
+
+### 4. Manajemen Stok NIK JSON Fleksibel (Root & Folder `nik/`)
+- Menu pemilihan file JSON stok NIK (`pilih_file_json`) otomatis membaca file `.json` yang ada di **main utama (root)** maupun di dalam subfolder **`nik/`**.
+- Menampilkan nomor urut, path file, label lokasi (`[Main]` vs `[Folder nik]`), serta jumlah stok NIK yang tersedia.
+- Mendukung pemilihan via nomor urut, tombol **Enter** untuk default (`nik.json` di root atau `nik/nik.json`), atau pengetikan nama file langsung.
+- NIK sukses otomatis dicatat ke `nik_valid.json`, sedangkan NIK tidak ditemukan dipindahkan ke `nik_invalid.json`.
+
+### 5. Deteksi Dini Batas Kuota (API Limit)
+- Sistem memantau kemunculan banner limit API server BPS secara real-time.
+- Begitu limit terdeteksi, sistem segera menampilkan informasi cooldown dan menghentikan proses dengan aman (`ApiLimitError`) agar pengguna dapat logout dan login menggunakan akun pencacah lain.
+
+### 6. Dukungan Multi-Device (Paralel Multi-HP)
+- Parameter `--device` / `-d` memungkinkan eksekusi beberapa HP Android sekaligus pada komputer yang sama via USB debugging secara paralel tanpa bentrok antrean cache.
 
 ---
 
 ## Persyaratan Sistem
 
-1. **Komputer/Laptop:** OS Windows dengan Python 3.8 ke atas terinstal.
+1. **Komputer/Laptop:** OS Windows 10/11 dengan Python 3.8 - 3.11 terinstal.
 2. **Perangkat HP Android:**
-   - Fitur **USB Debugging** aktif (di Opsi Pengembang).
-   - HP terhubung ke komputer via kabel data USB.
-   - Layar HP menyala dan aplikasi Fasih BPS terinstal.
+   - Opsi Pengembang (*Developer Options*) aktif.
+   - **USB Debugging** diaktifkan.
+   - Layar menyala dan aplikasi **Fasih BPS** (`id.go.bpsfasih`) sudah terinstal dan login.
+3. **Kabel Data USB:** Koneksi stabil antara HP dan komputer.
 
 ---
 
-## Langkah Instalasi & Persiapan
+## Instalasi & Persiapan
 
-Jalankan perintah berikut di terminal (PowerShell atau CMD) di folder proyek:
-
-### 1. Mengaktifkan Virtual Environment
-* **Windows PowerShell:**
-  ```powershell
-  .\venv\Scripts\Activate.ps1
-  ```
-* **Windows CMD:**
-  ```cmd
-  .\venv\Scripts\activate.bat
-  ```
-
-### 2. Menginstal Dependensi
-```powershell
-pip install -r requirements.txt
-```
+1. Buka terminal (PowerShell / CMD) di direktori proyek.
+2. Aktifkan virtual environment:
+   ```powershell
+   .\venv\Scripts\Activate.ps1
+   ```
+3. Pasang library yang diperlukan:
+   ```powershell
+   pip install -r requirements.txt
+   ```
+4. Pastikan perangkat Android terdeteksi oleh ADB:
+   ```powershell
+   adb devices
+   ```
 
 ---
 
-## Format Data CSV
+## Format Data Masukan (CSV & JSON)
 
-### A. Untuk Mode Tambah Baru (`HENGKI.csv`)
+### A. Format CSV untuk Mode Tambah Baru (`HENGKI.csv`)
 - **Separator:** Titik koma (`;`)
 - **Kolom Utama:** `IDPEL`, `NAMA`, `NOIDENTITAS`, `KECAMATAN`, `KELURAHAN_DESA`, `ALAMAT`
 
-### B. Untuk Mode Update NIK (`ahzacahyo.csv`)
+### B. Format Master CSV untuk Update NIK (Mode 2, 3, 4, 5)
 - **Separator:** Titik koma (`;`)
-- **Format Header:**
+- **Contoh Header:**
   ```csv
-  id_pelanggan;NIK Perbaikan
-  521550683355;3308180507950006
-  521551931787;3308201010770006
+  id_pelanggan;NIK Perbaikan;daya
+  521550683355;3308180507950006;900
+  521551931787;3308201010770006;450
   ```
+
+### C. Format Stok JSON untuk Mode Direct / Fallback (Mode 5, 6, 7)
+File dapat diletakkan di root proyek atau di dalam subfolder `nik/` (misal: `nik/BANDONGAN.json` atau `nik.json`):
+```json
+[
+  "3308113103850004",
+  "3308110502900001",
+  "3308112208930002"
+]
+```
+*(Mendukung daftar string NIK langsung maupun daftar objek JSON dengan atribut `"nik"`).*
 
 ---
 
-## Cara Menjalankan
+## Panduan Menjalankan Aplikasi
 
-### Cara 1: Melalui Menu Interaktif Utama
-Posisikan layar HP pada halaman depan **Daftar Assignment** di aplikasi Fasih BPS, lalu jalankan:
+### Cara 1: Menu Interaktif Utama (`main.py`)
+Posisikan aplikasi Fasih di HP pada halaman **Daftar Assignment**, lalu jalankan:
 ```powershell
 python main.py
 ```
-1. Pilih mode yang diinginkan:
-   - Ketik **`1`** untuk Penambahan Data Baru.
-   - Ketik **`2`** untuk Perbaikan Data NIK.
-   - Ketik **`0`** untuk Keluar.
-2. Setelah memilih mode, sistem akan menampilkan daftar seluruh file CSV yang ada di folder proyek lengkap dengan jumlah data:
-   - Ketik **nomor urut** (misal: `1`, `2`, `3`) untuk memilih file langsung.
-   - Atau ketik **nama file secara langsung** (misal: `data_saya.csv` atau `data_saya`).
-   - Ketik **`0`** untuk batal dan kembali ke menu utama.
-
-### Cara 2: Menjalankan Langsung Skrip Update NIK (Dukungan Multi-Device & Custom CSV)
-
-- **Mode Interaktif Standar:**
-  ```powershell
-  python update_nik.py
-  ```
-  *(Script akan memunculkan menu interaktif untuk memilih file CSV dan memilih perangkat jika terhubung lebih dari 1 HP).*
-
-- **Mode Multi-Device / Custom File CSV:**
-  Gunakan parameter `--device` (atau `-d`) dan `--csv` (atau `-c`):
-  ```powershell
-  python update_nik.py --device <SERIAL_HP> --csv <NAMA_FILE.csv>
-  ```
-  *Contoh menjalankan 2 HP secara bersamaan di 2 terminal terpisah:*
-  - **Terminal 1:**
-    ```powershell
-    python update_nik.py --device 068703713T108144 --csv data_hp1.csv
-    ```
-  - **Terminal 2:**
-    ```powershell
-    python update_nik.py --device RR8N60CWMLZ --csv data_hp2.csv
-    ```
+Pilih angka mode yang diinginkan `[1 - 7]` sesuai kebutuhan.
 
 ---
 
-## File Log & Output Otomatis
+### Cara 2: Menjalankan Langsung via Command Line (`update_nik.py`)
 
-| Nama File | Keterangan |
+Gunakan argumen baris perintah untuk eksekusi spesifik atau multi-device:
+
+#### Menjalankan Mode 6 (Pasca Bayar Direct HP):
+```powershell
+python update_nik.py --mode 6 --device <SERIAL_HP> --json nik/MERTOYUDAN.json
+```
+
+#### Menjalankan Mode 7 (Prabayar Direct HP):
+```powershell
+python update_nik.py --mode 7 --device <SERIAL_HP> --json nik.json
+```
+
+#### Menjalankan Mode 4 (Pasca Bayar Reverse CSV):
+```powershell
+python update_nik.py --mode 4 --device <SERIAL_HP> --csv masterpasca.csv
+```
+
+#### Menjalankan Multi-Device Bersamaan (2 HP di 2 Terminal Terpisah):
+- **Terminal 1 (HP 1):**
+  ```powershell
+  python update_nik.py --mode 6 --device 068703713T108144 --json nik/BANDONGAN.json
+  ```
+- **Terminal 2 (HP 2):**
+  ```powershell
+  python update_nik.py --mode 6 --device RR8N60CWMLZ --json nik/MERTOYUDAN.json
+  ```
+
+---
+
+## Manajemen Stok NIK & Logging
+
+### File Log Output Otomatis (CSV)
+| File Log | Keterangan |
 | :--- | :--- |
-| `SUKSES_UPDATE_NIK.csv` | Catatan ID Pelanggan dan NIK yang berhasil diperbarui dan disubmit. |
-| `IDPEL_TIDAK_DITEMUKAN.csv` | Catatan ID Pelanggan yang tidak ada dalam daftar penugasan. |
-| `NIK_TIDAK_DITEMUKAN.csv` | Catatan NIK yang gagal dipadankan di server BPS (status *TIDAK DITEMUKAN*). |
-| `NIK_GAGAL_UPDATE.csv` | Catatan error teknis / form galat selama proses perbaikan. |
-| `BERHASIL_KIRIM.csv` | Catatan data yang sukses disubmit pada mode penambahan kuesioner baru. |
+| `SUKSES_UPDATE_NIK.csv` | Data IDPEL & NIK yang berhasil diperbarui dan berstatus terkirim. |
+| `BELUM_TERSURVEI_SKIP.csv` | Data yang dilewati otomatis karena kuesioner belum disurvei. |
+| `IDPEL_TIDAK_DITEMUKAN.csv` | Data IDPEL yang tidak ditemukan di tabel penugasan aplikasi. |
+| `NIK_TIDAK_DITEMUKAN.csv` | NIK yang berstatus *TIDAK DITEMUKAN* saat pemadanan Dukcapil. |
+| `NIK_GAGAL_UPDATE.csv` | Catatan galat form atau kendala koneksi server selama proses. |
+| `BERHASIL_KIRIM.csv` | Data berhasil kirim untuk mode penambahan kuesioner baru. |
+
+### Pemilahan Stok NIK JSON Real-Time
+| File JSON | Keterangan |
+| :--- | :--- |
+| `<nama_file>.json` | File stok aktif (NIK yang sudah terpakai atau invalid otomatis dihapus). |
+| `nik_valid.json` | Arsip NIK yang terbukti **SESUAI/DITEMUKAN** dan telah berhasil dikirim ke server (disimpan lengkap dengan IDPEL & waktu). |
+| `nik_invalid.json` | Arsip NIK yang dinyatakan **TIDAK DITEMUKAN** oleh Dukcapil agar tidak dicoba kembali. |
 
 ---
 
 ## Struktur Repositori
 
 ```text
-├── main.py                    # Berkas utama peluncur & menu otomasi
-├── update_nik.py              # Modul otomasi perbaikan / update NIK
-├── analisa_ui.py              # Utilitas inspeksi & dump UI Android
-├── requirements.txt           # Daftar dependensi library Python
-├── README.md                  # Dokumentasi panduan penggunaan
-└── .gitignore                 # Konfigurasi pengabaian file sampah & log
+├── core/                           # Paket inti otomasi modular
+│   ├── __init__.py                 # Ekspor fungsi-fungsi utama
+│   ├── config.py                   # Konfigurasi konstanta & nama file
+│   ├── csv_utils.py                # Utilitas pembacaan & penulisan CSV log
+│   ├── exceptions.py               # Custom Exception (ApiLimitError, dll)
+│   ├── form_processor.py           # Logika pemadanan BLOK I/II & tombol Kirim
+│   ├── logger.py                   # Sistem pencatatan logging
+│   ├── nik_provider.py             # Manajemen stok NIK JSON, fallback & menu pilih
+│   ├── scanner.py                  # Pemindaian tabel HP & smart caching wilayah
+│   └── ui_helpers.py               # Operasi UI Android (klik, input, scroll)
+├── cache/                          # Subfolder penyimpanan file cache antrean HP
+│   └── cache_scan_<wilayah1>.json  # File cache penugasan per wilayah
+├── nik/                            # Subfolder koleksi file stok NIK JSON
+│   └── *.json                      # File stok NIK per kecamatan/wilayah
+├── main.py                         # Peluncur utama dengan menu 7 mode operasi
+├── update_nik.py                   # Skrip eksekutor perbaikan data NIK
+├── analisa_ui.py                   # Alat bantu inspeksi hierarchy XML Android
+├── requirements.txt                # Dependensi modul Python
+└── README.md                       # Dokumentasi panduan lengkap
 ```
