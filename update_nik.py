@@ -383,15 +383,15 @@ def run_direct_random_mode(target_device=None, custom_json=None, is_pasca=True):
        - NIK TIDAK DITEMUKAN -> Dihapus dari stok JSON dan disimpan ke nik_invalid.json
        - NIK SESUAI & TERPAKAI -> Dihapus dari stok JSON dan dicatat ke nik_valid.json
     """
-    mode_num = "6" if is_pasca else "7"
-    judul_mode = "Pasca Bayar Direct HP (Mode 6)" if is_pasca else "Prabayar Direct HP (Mode 7)"
+    mode_label = "Pasca 3" if is_pasca else "Prabayar 4"
+    judul_mode = f"Pasca Bayar Direct HP ({mode_label})" if is_pasca else f"Prabayar Direct HP ({mode_label})"
     target_json = custom_json or ""
     if not target_json:
         target_json = pilih_file_json(judul_mode=judul_mode)
         if not target_json:
             return
 
-    judul_banner = "OTOMASI PENGEDITAN NIK PASCA DIRECT HP (MODE 6 - RANDOM)" if is_pasca else "OTOMASI PENGEDITAN NIK PRABAYAR DIRECT HP (MODE 7 - RANDOM)"
+    judul_banner = f"OTOMASI PENGEDITAN NIK PASCA DIRECT HP ({mode_label})" if is_pasca else f"OTOMASI PENGEDITAN NIK PRABAYAR DIRECT HP ({mode_label})"
     target_blok = "Lewati BLOK I -> Langsung BLOK II" if is_pasca else "Cek IDPEL di BLOK I -> Lanjut BLOK II"
     scan_desc = "Scan ID Pelanggan (Multi-Halaman)" if is_pasca else "Scan Penugasan HP (Multi-Halaman)"
 
@@ -429,7 +429,7 @@ def run_direct_random_mode(target_device=None, custom_json=None, is_pasca=True):
         return
 
     total_data = len(scanned_items)
-    print(f"\n[*] Memulai eksekusi {total_data} penugasan hasil scan HP dengan NIK acak (Mode {mode_num})...\n")
+    print(f"\n[*] Memulai eksekusi {total_data} penugasan hasil scan HP dengan NIK acak ({mode_label})...\n")
 
     sukses_count = 0
     idpel_tidak_ada_count = 0
@@ -445,7 +445,7 @@ def run_direct_random_mode(target_device=None, custom_json=None, is_pasca=True):
             "NIK_Perbaikan": first_nik,
             "daya": "1300"  # Set non-450 agar fallback 5x acak aktif jika NIK pertama tidak ditemukan
         }
-        print(f"\n>>> Progress Direct Mode {mode_num}: [{idx}/{total_data}] Target: {item_id} <<<")
+        print(f"\n>>> Progress Direct Mode ({mode_label}): [{idx}/{total_data}] Target: {item_id} <<<")
 
         try:
             status_hasil = process_update_nik(
@@ -474,7 +474,7 @@ def run_direct_random_mode(target_device=None, custom_json=None, is_pasca=True):
                 remove_id_from_scan_cache(item_id, device=d)
         except ApiLimitError as e:
             print_api_limit_banner()
-            print(f"[X] PROSES DIRECT MODE {mode_num} DIHENTIKAN: {e}")
+            print(f"[X] PROSES DIRECT MODE ({mode_label}) DIHENTIKAN: {e}")
             print("[*] Akun BPS terkena batas kuota API. Silakan logout dan login akun lain!")
             back_to_assignment_list(d)
             clear_search_box(d)
@@ -493,7 +493,7 @@ def run_direct_random_mode(target_device=None, custom_json=None, is_pasca=True):
             time.sleep(2.0)
 
     print("\n" + "=" * 65)
-    print(f"             PEMROSESAN DIRECT MODE {mode_num} SELESAI!")
+    print(f"             PEMROSESAN DIRECT MODE ({mode_label}) SELESAI!")
     print("=" * 65)
     print(f"  - Total Penugasan HP    : {total_data}")
     print(f"  - Berhasil Diupdate     : {sukses_count} (Cek: '{OUT_SUKSES}')")
@@ -514,7 +514,7 @@ def main(custom_device=None, custom_csv=None, mode="forward", custom_json=None):
     parser.add_argument("--device", "-d", type=str, default="", help="Serial ID perangkat Android (lihat via 'adb devices')")
     parser.add_argument("--csv", "-c", type=str, default="", help="Nama/path file CSV data perbaikan NIK")
     parser.add_argument("--json", "-j", type=str, default="", help="Nama/path file JSON stok NIK (default: nik.json)")
-    parser.add_argument("--mode", "-m", type=str, default="forward", help="Pilih mode: 'forward' ('2') / 'reverse' ('3') / 'pasca' ('4') / 'pascadaya' ('5') / 'direct' ('6') / 'direct_pra' ('7')")
+    parser.add_argument("--mode", "-m", type=str, default="forward", help="Pilih mode:\n  Prabayar: 'forward'/'pra2'/'2', 'reverse'/'pra3'/'3', 'direct_pra'/'pra4'/'7'\n  Pasca   : 'pasca'/'pasca1'/'4', 'pascadaya'/'pasca2'/'5', 'direct'/'pasca3'/'6'")
     
     args, _ = parser.parse_known_args()
     target_device = custom_device or args.device or DEVICE_ID
@@ -522,20 +522,23 @@ def main(custom_device=None, custom_csv=None, mode="forward", custom_json=None):
     target_json = custom_json or getattr(args, "json", "") or ""
     selected_mode = mode or args.mode or "forward"
 
-    if selected_mode.lower() in ["direct_pra", "7", "pradirect", "pra_random", "prabayar_direct", "pra"]:
+    if selected_mode.lower() in ["direct_pra", "7", "1.4", "14", "pra4", "pra_4", "pradirect", "pra_random", "prabayar_direct", "pra"]:
         run_direct_random_mode(target_device=target_device, custom_json=target_json, is_pasca=False)
         return
-    elif selected_mode.lower() in ["direct", "6", "pascarandom", "hp_random", "random"]:
+    elif selected_mode.lower() in ["direct", "6", "2.3", "23", "pasca3", "pasca_3", "pascarandom", "hp_random", "random"]:
         run_direct_random_mode(target_device=target_device, custom_json=target_json, is_pasca=True)
         return
-    elif selected_mode.lower() in ["pascadaya", "5", "pasca_daya", "daya"]:
+    elif selected_mode.lower() in ["pascadaya", "5", "2.2", "22", "pasca2", "pasca_2", "pasca_daya", "daya"]:
         run_reverse_mode(target_device=target_device, custom_csv=target_csv, is_pasca=True, enable_daya_fallback=True)
         return
-    elif selected_mode.lower() in ["reverse", "3", "terbalik", "rev"]:
+    elif selected_mode.lower() in ["reverse", "3", "1.3", "13", "pra3", "pra_3", "terbalik", "rev"]:
         run_reverse_mode(target_device=target_device, custom_csv=target_csv, is_pasca=False)
         return
-    elif selected_mode.lower() in ["pasca", "4", "pascabayar", "reverse_pasca"]:
+    elif selected_mode.lower() in ["pasca", "4", "2.1", "21", "pasca1", "pasca_1", "pascabayar", "reverse_pasca"]:
         run_reverse_mode(target_device=target_device, custom_csv=target_csv, is_pasca=True)
+        return
+    elif selected_mode.lower() in ["forward", "2", "1.2", "12", "pra2", "pra_2", "edit", "update"]:
+        run_forward_mode(target_device=target_device, custom_csv=target_csv)
         return
     else:
         run_forward_mode(target_device=target_device, custom_csv=target_csv)

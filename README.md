@@ -18,17 +18,22 @@ Aplikasi otomasi cerdas berbasis Python dan `uiautomator2` untuk melakukan pengi
 
 ## Fitur Utama & 7 Mode Operasi
 
-Aplikasi menyediakan **7 mode operasi** yang dapat dipilih langsung melalui menu interaktif utama (`python main.py`):
+Aplikasi menyediakan struktur menu bertingkat (Submenu) yang rapi dan mudah dikembangkan:
 
-| Mode | Nama Mode | Deskripsi Singkat | Sumber Data |
+### ⚡ Kelompok Prabayar (Wajib Cek IDPEL di BLOK I)
+| No | Nama Mode | Deskripsi Singkat | Shortcut CLI |
 | :---: | :--- | :--- | :--- |
-| **[1]** | **Penambahan Data Baru** (`tambah`) | Pengisian kuesioner baru dari awal (pengambilan GPS, foto galeri acak, Blok II, Blok III, hingga Blok IV Jam Selesai & Kirim). | CSV (`HENGKI.csv`) |
-| **[2]** | **Pengeditan Data (Forward)** (`edit`) | Mengambil ID Pelanggan satu per satu dari CSV, mencari di kolom Search HP, lalu mengganti NIK. | CSV Custom |
-| **[3]** | **Pengeditan Data Terbalik (Reverse Prabayar)** (`reverse`) | Memindai nomor meter/IDPEL di HP terlebih dahulu, lalu mencocokkan secara instan dengan CSV master di memori. | HP + Master CSV |
-| **[4]** | **Pengeditan Data Pasca Bayar (Reverse)** (`pasca`) | Mirip Mode 3 khusus Pasca Bayar: otomatis melewati Cek IDPEL di BLOK I dan langsung memproses BLOK II. | HP + Master CSV Pasca |
-| **[5]** | **Pasca Bayar + Daya & Fallback NIK** (`pascadaya`) | Melewati BLOK I. Jika NIK utama gagal dan daya pelanggan **bukan 450 VA** (900 VA ke atas), sistem otomatis mencari NIK cadangan dari stok JSON. Daya 450 tidak difallback demi kepatuhan aturan. | HP + Master CSV + JSON |
-| **[6]** | **Pasca Bayar Direct HP (Acak NIK JSON Tanpa CSV)** (`direct`) | Memindai seluruh IDPEL di HP (multi-halaman >100 entri). Melewati BLOK I, mengisi NIK acak dari file JSON, coba hingga 5x jika tidak cocok. | HP + File JSON Stok |
-| **[7]** | **Prabayar Direct HP (Acak NIK JSON Tanpa CSV)** (`direct_pra`) | Memindai penugasan di HP. Menjalankan Cek IDPEL di BLOK I, lalu mengisi NIK acak dari file JSON di BLOK II. Coba hingga 5x jika tidak cocok. | HP + File JSON Stok |
+| **[1]** | **Penambahan Data Baru** | Pengisian kuesioner baru dari awal (GPS, foto galeri acak, Blok II, Blok III, Blok IV Jam Selesai & Kirim). | `-m 1` / `-m pra1` / `-m tambah` |
+| **[2]** | **Pengeditan Data (Forward)** | Mengambil ID Pelanggan satu per satu dari CSV, mencari di kolom Search HP, lalu mengganti NIK. | `-m 2` / `-m pra2` / `-m edit` |
+| **[3]** | **Reverse Mode (Prabayar)** | Pindai seluruh penugasan/meter di HP terlebih dahulu, lalu mencocokkan instan dengan master CSV di memori. | `-m 3` / `-m pra3` / `-m reverse` |
+| **[4]** | **Direct Random Prabayar** | Scan penugasan HP -> Cek IDPEL di Blok I -> Isi NIK acak dari file stok JSON tanpa CSV. Coba hingga 5x. | `-m 4` / `-m pra4` / `-m direct_pra` / `-m 7` |
+
+### 🏢 Kelompok Pasca Bayar (Bypass BLOK I -> Langsung BLOK II)
+| No | Nama Mode | Deskripsi Singkat | Shortcut CLI |
+| :---: | :--- | :--- | :--- |
+| **[1]** | **Reverse Pasca Bayar** | Pindai penugasan di HP -> lewati Cek IDPEL Blok I -> cocokkan dengan `masterpasca.csv`. | `-m pasca1` / `-m pasca` / `-m 4` |
+| **[2]** | **Pasca Bayar + Daya & Fallback** | Lewati Blok I. Jika NIK utama gagal & bukan 450 VA (900 VA+), otomatis ambil NIK cadangan dari JSON. | `-m pasca2` / `-m pascadaya` / `-m 5` |
+| **[3]** | **Direct Random Pasca Bayar** | Scan seluruh IDPEL di HP -> lewati Blok I -> isi NIK acak dari file JSON tanpa CSV. Coba hingga 5x. | `-m pasca3` / `-m direct` / `-m 6` |
 
 ---
 

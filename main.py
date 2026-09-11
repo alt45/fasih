@@ -1408,15 +1408,36 @@ def main(target_device=None, target_csv=None):
 
 def pilih_mode():
     """
-    Menampilkan menu interaktif untuk memilih mode operasi skrip.
-    Mengembalikan:
-        'tambah' - untuk menjalankan alur penambahan data baru
-        'edit'   - untuk menjalankan alur pengeditan data (NIK, dll)
-        None     - jika pengguna memilih keluar
+    Menampilkan menu interaktif bertingkat (Submenu) untuk memilih mode operasi skrip:
+    1. Menu Utama: Pilih Kategori [1] Prabayar / [2] Pasca Bayar / [0] Keluar
+    2. Submenu Prabayar: [1] Tambah, [2] Forward, [3] Reverse, [4] Direct
+    3. Submenu Pasca Bayar: [1] Reverse, [2] Pasca Daya, [3] Direct
+    Mendukung penambahan menu baru tanpa mengganggu kategori lain, serta shortcut langsung (1.1, 2.1, dll).
     """
+
+
+def tampilkan_menu_utama():
     print()
     print("╔══════════════════════════════════════════════════════════╗")
-    print("║       SKRIP OTOMASI FASIH BPS - PILIH MODE OPERASI      ║")
+    print("║        SKRIP OTOMASI FASIH BPS - MENU UTAMA              ║")
+    print("╠══════════════════════════════════════════════════════════╣")
+    print("║                                                          ║")
+    print("║   [1]  LAYANAN PRABAYAR                                  ║")
+    print("║        (Alur kuesioner baru & Cek ID Pelanggan di Blok I)║")
+    print("║                                                          ║")
+    print("║   [2]  LAYANAN PASCA BAYAR                               ║")
+    print("║        (Bypass Blok I, langsung eksekusi ke Blok II)     ║")
+    print("║                                                          ║")
+    print("║   [0]  KELUAR                                            ║")
+    print("║                                                          ║")
+    print("╚══════════════════════════════════════════════════════════╝")
+    print()
+
+
+def tampilkan_menu_prabayar():
+    print()
+    print("╔══════════════════════════════════════════════════════════╗")
+    print("║        MENU LAYANAN PRABAYAR (CEK BLOK I)                ║")
     print("╠══════════════════════════════════════════════════════════╣")
     print("║                                                          ║")
     print("║   [1]  PENAMBAHAN DATA BARU                              ║")
@@ -1426,72 +1447,156 @@ def pilih_mode():
     print("║   [2]  PENGEDITAN DATA (Forward: File CSV -> Cari di HP) ║")
     print("║        Mencari data dari file CSV ke HP satu per satu.   ║")
     print("║                                                          ║")
-    print("║   [3]  PENGEDITAN DATA TERBALIK (Reverse: HP -> Master)  ║")
-    print("║        Pindai assignment di HP -> Cocokkan master.csv    ║")
-    print("║        Sangat cepat untuk master CSV berukuran besar!    ║")
+    print("║   [3]  REVERSE PRABAYAR (Reverse: HP -> Master CSV)      ║")
+    print("║        Pindai assignment di HP -> Cocokkan master.csv.   ║")
     print("║                                                          ║")
-    print("║   [4]  PENGEDITAN DATA PASCA BAYAR (Reverse: masterpasca)║")
-    print("║        Pindai assignment di HP -> Cocokkan masterpasca   ║")
-    print("║        Lewati Cek IDPEL di BLOK I, langsung ke BLOK II   ║")
+    print("║   [4]  DIRECT PRABAYAR (Acak nik.json Tanpa CSV)         ║")
+    print("║        Scan penugasan HP -> Cek Blok I -> Acak NIK       ║")
     print("║                                                          ║")
-    print("║   [5]  PASCA BAYAR + DAYA & FALLBACK NIK (nik.json)      ║")
-    print("║        Pindai IDPEL di HP -> Cocokkan masterpascadaya.csv║")
-    print("║        Lewati BLOK I, NIK tidak cocok & bukan daya 450   ║")
-    print("║        akan otomatis difallback ke NIK dari nik.json     ║")
-    print("║                                                          ║")
-    print("║   [6]  PASCA BAYAR DIRECT HP (Acak nik.json Tanpa CSV)   ║")
-    print("║        Scan semua IDPEL di HP (Multi-page >100 item)     ║")
-    print("║        Lewati BLOK I, isi NIK acak dari nik.json         ║")
-    print("║        Maksimal 5x coba acak jika tidak ditemukan        ║")
-    print("║                                                          ║")
-    print("║   [7]  PRABAYAR DIRECT HP (Acak nik.json Tanpa CSV)      ║")
-    print("║        Scan penugasan di HP (Multi-page >100 item)       ║")
-    print("║        Cek IDPEL di BLOK I, isi NIK acak dari nik.json   ║")
-    print("║        Maksimal 5x coba acak jika tidak ditemukan        ║")
-    print("║                                                          ║")
-    print("║   [0]  KELUAR                                            ║")
+    print("║   [0]  KEMBALI KE MENU UTAMA                             ║")
     print("║                                                          ║")
     print("╚══════════════════════════════════════════════════════════╝")
     print()
 
+
+def tampilkan_menu_pascabayar():
+    print()
+    print("╔══════════════════════════════════════════════════════════╗")
+    print("║       MENU LAYANAN PASCA BAYAR (LANGSUNG BLOK II)        ║")
+    print("╠══════════════════════════════════════════════════════════╣")
+    print("║                                                          ║")
+    print("║   [1]  REVERSE PASCA BAYAR (Scan HP -> masterpasca.csv)  ║")
+    print("║        Pindai assignment di HP -> Lewati Cek IDPEL       ║")
+    print("║                                                          ║")
+    print("║   [2]  PASCA BAYAR + DAYA & FALLBACK NIK (nik.json)      ║")
+    print("║        Lewati Blok I, cek daya -> jika gagal ambil JSON  ║")
+    print("║                                                          ║")
+    print("║   [3]  DIRECT PASCA BAYAR (Acak nik.json Tanpa CSV)      ║")
+    print("║        Scan penugasan HP -> Lewati Blok I -> Acak NIK    ║")
+    print("║                                                          ║")
+    print("║   [0]  KEMBALI KE MENU UTAMA                             ║")
+    print("║                                                          ║")
+    print("╚══════════════════════════════════════════════════════════╝")
+    print()
+
+
+def pilih_mode():
+    """
+    Menampilkan menu interaktif bertingkat (Submenu) untuk memilih mode operasi skrip.
+    Mendukung navigasi 2 tingkat (Kategori -> Sub-mode) serta shortcut cepat langsung.
+    """
     while True:
-        pilihan = input("   Masukkan pilihan Anda [1/2/3/4/5/6/7/0]: ").strip()
-        if pilihan == "1":
+        tampilkan_menu_utama()
+        pilihan = input("   Pilih kategori [1=Pra / 2=Pasca / 0=Keluar]: ").strip().lower()
+
+        # Shortcut langsung dari menu utama:
+        if pilihan in ["1.1", "11", "p1", "pra1", "tambah"]:
             print()
-            print("[✓] Mode dipilih: PENAMBAHAN DATA BARU")
+            print("[✓] Mode dipilih: [PRABAYAR 1] PENAMBAHAN DATA BARU")
             print("[*] Memuat konfigurasi mode Tambah...")
             print()
             return "tambah"
-        elif pilihan == "2":
+        elif pilihan in ["1.2", "12", "p2", "pra2", "edit"]:
             print()
-            print("[*] Mode dipilih: PENGEDITAN DATA (FORWARD)")
+            print("[✓] Mode dipilih: [PRABAYAR 2] PENGEDITAN DATA (FORWARD)")
             return "edit"
+        elif pilihan in ["1.3", "13", "p3", "pra3", "reverse"]:
+            print()
+            print("[✓] Mode dipilih: [PRABAYAR 3] REVERSE PRABAYAR")
+            return "reverse"
+        elif pilihan in ["1.4", "14", "p4", "pra4", "direct_pra", "7"]:
+            print()
+            print("[✓] Mode dipilih: [PRABAYAR 4] DIRECT PRABAYAR (ACAK JSON)")
+            return "direct_pra"
+        elif pilihan in ["2.1", "21", "b1", "pasca1", "pasca"]:
+            print()
+            print("[✓] Mode dipilih: [PASCA 1] REVERSE PASCA BAYAR")
+            return "pasca"
+        elif pilihan in ["2.2", "22", "b2", "pasca2", "pascadaya"]:
+            print()
+            print("[✓] Mode dipilih: [PASCA 2] PASCA BAYAR + DAYA & FALLBACK NIK")
+            return "pascadaya"
+        elif pilihan in ["2.3", "23", "b3", "pasca3", "direct"]:
+            print()
+            print("[✓] Mode dipilih: [PASCA 3] DIRECT PASCA BAYAR (ACAK JSON)")
+            return "direct"
+        # Kompatibilitas pintasan angka lama:
         elif pilihan == "3":
             print()
-            print("[*] Mode dipilih: PENGEDITAN DATA TERBALIK (REVERSE)")
+            print("[✓] Mode dipilih: [PRABAYAR 3] REVERSE PRABAYAR")
             return "reverse"
         elif pilihan == "4":
             print()
-            print("[*] Mode dipilih: PENGEDITAN DATA PASCA BAYAR (REVERSE)")
+            print("[✓] Mode dipilih: [PASCA 1] REVERSE PASCA BAYAR")
             return "pasca"
         elif pilihan == "5":
             print()
-            print("[*] Mode dipilih: PASCA BAYAR + DAYA & FALLBACK NIK (nik.json)")
+            print("[✓] Mode dipilih: [PASCA 2] PASCA BAYAR + DAYA & FALLBACK NIK")
             return "pascadaya"
         elif pilihan == "6":
             print()
-            print("[*] Mode dipilih: PASCA BAYAR DIRECT HP (Acak nik.json Tanpa CSV)")
+            print("[✓] Mode dipilih: [PASCA 3] DIRECT PASCA BAYAR (ACAK JSON)")
             return "direct"
-        elif pilihan == "7":
-            print()
-            print("[*] Mode dipilih: PRABAYAR DIRECT HP (Acak nik.json Tanpa CSV)")
-            return "direct_pra"
-        elif pilihan == "0":
+        elif pilihan in ["0", "exit", "keluar", "q"]:
             print()
             print("[*] Program dihentikan oleh pengguna.")
             return None
+
+        # Masuk ke Submenu Prabayar
+        elif pilihan in ["1", "pra", "prabayar"]:
+            while True:
+                tampilkan_menu_prabayar()
+                sub_pilihan = input("   Pilih mode Prabayar [1/2/3/4/0]: ").strip().lower()
+                if sub_pilihan in ["1", "tambah"]:
+                    print()
+                    print("[✓] Mode dipilih: [PRABAYAR 1] PENAMBAHAN DATA BARU")
+                    print("[*] Memuat konfigurasi mode Tambah...")
+                    print()
+                    return "tambah"
+                elif sub_pilihan in ["2", "forward", "edit"]:
+                    print()
+                    print("[✓] Mode dipilih: [PRABAYAR 2] PENGEDITAN DATA (FORWARD)")
+                    return "edit"
+                elif sub_pilihan in ["3", "reverse"]:
+                    print()
+                    print("[✓] Mode dipilih: [PRABAYAR 3] REVERSE PRABAYAR")
+                    return "reverse"
+                elif sub_pilihan in ["4", "direct", "random"]:
+                    print()
+                    print("[✓] Mode dipilih: [PRABAYAR 4] DIRECT PRABAYAR (ACAK JSON)")
+                    return "direct_pra"
+                elif sub_pilihan in ["0", "batal", "kembali", "back"]:
+                    print()
+                    print("[*] Kembali ke Menu Utama...")
+                    break
+                else:
+                    print("   [⚠️] Pilihan tidak valid. Silakan masukkan 1, 2, 3, 4, atau 0 untuk kembali.")
+
+        # Masuk ke Submenu Pasca Bayar
+        elif pilihan in ["2", "pasca", "pascabayar"]:
+            while True:
+                tampilkan_menu_pascabayar()
+                sub_pilihan = input("   Pilih mode Pasca Bayar [1/2/3/0]: ").strip().lower()
+                if sub_pilihan in ["1", "reverse", "pasca"]:
+                    print()
+                    print("[✓] Mode dipilih: [PASCA 1] REVERSE PASCA BAYAR")
+                    return "pasca"
+                elif sub_pilihan in ["2", "daya", "pascadaya"]:
+                    print()
+                    print("[✓] Mode dipilih: [PASCA 2] PASCA BAYAR + DAYA & FALLBACK NIK")
+                    return "pascadaya"
+                elif sub_pilihan in ["3", "direct", "random"]:
+                    print()
+                    print("[✓] Mode dipilih: [PASCA 3] DIRECT PASCA BAYAR (ACAK JSON)")
+                    return "direct"
+                elif sub_pilihan in ["0", "batal", "kembali", "back"]:
+                    print()
+                    print("[*] Kembali ke Menu Utama...")
+                    break
+                else:
+                    print("   [⚠️] Pilihan tidak valid. Silakan masukkan 1, 2, 3, atau 0 untuk kembali.")
         else:
-            print("   [⚠️] Pilihan tidak valid. Silakan masukkan 1, 2, 3, 4, 5, 6, 7, atau 0.")
+            print("   [⚠️] Pilihan tidak valid. Masukkan 1 (Prabayar), 2 (Pasca Bayar), atau 0 (Keluar).")
 
 
 if __name__ == "__main__":
@@ -1502,7 +1607,7 @@ if __name__ == "__main__":
         description="Skrip Otomasi Fasih BPS - Penambahan & Perbaikan Data",
         formatter_class=argparse.RawTextHelpFormatter
     )
-    parser.add_argument("--mode", "-m", type=str, default="", help="Pilih mode: 'tambah' ('1') / 'edit' ('2') / 'reverse' ('3') / 'pasca' ('4') / 'pascadaya' ('5') / 'direct' ('6') / 'direct_pra' ('7')")
+    parser.add_argument("--mode", "-m", type=str, default="", help="Pilih mode:\n  Prabayar: 'pra1'/'1.1'/'1' (Tambah), 'pra2'/'1.2'/'2' (Forward), 'pra3'/'1.3'/'3' (Reverse), 'pra4'/'1.4'/'7' (Direct)\n  Pasca   : 'pasca1'/'2.1'/'4' (Reverse), 'pasca2'/'2.2'/'5' (Pasca Daya), 'pasca3'/'2.3'/'6' (Direct)")
     parser.add_argument("--device", "-d", type=str, default="", help="Serial ID perangkat Android (lihat via 'adb devices')")
     parser.add_argument("--csv", "-c", type=str, default="", help="Nama/path file CSV data")
     args, _ = parser.parse_known_args()
@@ -1515,20 +1620,20 @@ if __name__ == "__main__":
         mode = None
         if args.mode:
             m_lower = args.mode.strip().lower()
-            if m_lower in ["1", "tambah", "add"]:
+            if m_lower in ["1", "1.1", "11", "pra1", "pra_1", "tambah", "add"]:
                 mode = "tambah"
-            elif m_lower in ["2", "edit", "update"]:
+            elif m_lower in ["2", "1.2", "12", "pra2", "pra_2", "edit", "update", "forward"]:
                 mode = "edit"
-            elif m_lower in ["3", "reverse", "terbalik", "rev"]:
+            elif m_lower in ["3", "1.3", "13", "pra3", "pra_3", "reverse", "terbalik", "rev"]:
                 mode = "reverse"
-            elif m_lower in ["4", "pasca", "pascabayar", "reverse_pasca"]:
-                mode = "pasca"
-            elif m_lower in ["5", "pascadaya", "pasca_daya", "daya"]:
-                mode = "pascadaya"
-            elif m_lower in ["6", "direct", "hp_random", "pascarandom", "random"]:
-                mode = "direct"
-            elif m_lower in ["7", "direct_pra", "pra_random", "prabayar_direct", "pradirect", "pra"]:
+            elif m_lower in ["7", "1.4", "14", "pra4", "pra_4", "direct_pra", "pra_random", "prabayar_direct", "pradirect", "pra"]:
                 mode = "direct_pra"
+            elif m_lower in ["4", "2.1", "21", "pasca1", "pasca_1", "pasca", "pascabayar", "reverse_pasca"]:
+                mode = "pasca"
+            elif m_lower in ["5", "2.2", "22", "pasca2", "pasca_2", "pascadaya", "pasca_daya", "daya"]:
+                mode = "pascadaya"
+            elif m_lower in ["6", "2.3", "23", "pasca3", "pasca_3", "direct", "hp_random", "pascarandom", "random"]:
+                mode = "direct"
             else:
                 print(f"[!] Mode '{args.mode}' tidak dikenali. Menampilkan menu pilihan...")
                 mode = pilih_mode()
