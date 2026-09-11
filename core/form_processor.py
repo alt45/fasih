@@ -537,9 +537,15 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
 
             if hasil == "DITEMUKAN":
                 return "DITEMUKAN"
+            elif hasil == "TIDAK DITEMUKAN":
+                # Respon server valid: NIK memang TIDAK DITEMUKAN.
+                # Tidak perlu mengulang NIK yang sama, langsung kembalikan agar dicoba NIK lain (fallback)
+                return "TIDAK DITEMUKAN"
 
+            # Jika respon bukan DITEMUKAN dan bukan TIDAK DITEMUKAN (kendala koneksi / timeout / UNKNOWN):
             if att < max_attempts:
-                print(f"[*] NIK belum hijau/ditemukan ({hasil}). Melakukan pengecekan ulang tombol 'Cek NIK' (Percobaan {att+1}/{max_attempts})...")
+                print(f"[*] Respon pemadanan bukan 'DITEMUKAN' ataupun 'TIDAK DITEMUKAN' ({hasil}). Kemungkinan kendala koneksi/server.")
+                print(f"[*] Mengulangi Cek NIK sekali lagi (Percobaan {att+1}/{max_attempts})...")
                 time.sleep(1.5)
 
         return hasil
@@ -556,14 +562,15 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
             fallback_nik_provider.record_invalid(nik_baru, reason="TIDAK DITEMUKAN")
         
         # Cek apakah fallback NIK aktif dan daya pelanggan diperbolehkan untuk fallback (bukan daya 450)
-        if fallback_nik_provider is not None:
+        # Sesuai aturan: Jika status TIDAK DITEMUKAN, coba NIK lain. Jika kendala koneksi, langsung skip.
+        if fallback_nik_provider is not None and nik_match_result == "TIDAK DITEMUKAN":
             if is_daya_450(daya):
                 print(f"[!] IDPEL {idpel}: Daya 450 terdeteksi ('{daya}'). Sesuai aturan, TIDAK ADA fallback NIK cadangan.")
             elif not daya:
                 print(f"[!] IDPEL {idpel}: Nilai daya kosong/tidak terdefinisi. Fallback NIK dilewati demi keamanan.")
             else:
                 json_name = os.path.basename(fallback_nik_provider.json_path)
-                print(f"[*] IDPEL {idpel}: Daya '{daya}' (bukan daya 450). Menjalankan Fallback NIK acak dari {json_name} (Maksimal 5x percobaan)...")
+                print(f"[*] IDPEL {idpel}: NIK awal TIDAK DITEMUKAN & Daya '{daya}' (bukan 450). Menjalankan Fallback NIK acak dari {json_name} (Maksimal 5x percobaan)...")
                 tried_niks = set()
                 
                 for attempt in range(1, 6):
@@ -586,20 +593,26 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
                     hide_keyboard(d)
                     time.sleep(1.0)
                     
-                    # Panggil Cek NIK ulang (dengan retry 2x jika perlu)
+                    # Panggil Cek NIK (dengan retry jika kendala koneksi)
                     fallback_res = trigger_cek_nik_dan_pantau(label_nik=f"Fallback {attempt}/5 ({fallback_nik})", max_attempts=2)
 
                     if fallback_res == "DITEMUKAN":
                         nik_baru = fallback_nik
                         nik_match_result = "DITEMUKAN"
                         break
-                    else:
-                        if fallback_res == "TIDAK DITEMUKAN":
-                            fallback_nik_provider.record_invalid(fallback_nik, reason="TIDAK DITEMUKAN")
+                    elif fallback_res == "TIDAK DITEMUKAN":
+                        fallback_nik_provider.record_invalid(fallback_nik, reason="TIDAK DITEMUKAN")
                         if attempt < 5:
-                            print(f"[*] Percobaan {attempt}/5 belum cocok ({fallback_res}), bersiap mencoba NIK acak berikutnya ({attempt+1}/5)...")
+                            print(f"[*] Fallback NIK {fallback_nik} TIDAK DITEMUKAN, mencoba NIK acak berikutnya ({attempt+1}/5)...")
                         else:
-                            print(f"[!] Sudah mencoba 5 kali NIK acak dari {json_name} dan seluruhnya TIDAK DITEMUKAN. Mengabaikan IDPEL ini...")
+                            print(f"[!] Sudah mencoba 5 kali NIK acak dari {json_name} dan seluruhnya TIDAK DITEMUKAN.")
+                    else:
+                        # Respon bukan DITEMUKAN dan bukan TIDAK DITEMUKAN (kendala koneksi server)
+                        print(f"[!] Pemadanan Fallback NIK terhambat kendala koneksi server ({fallback_res}). Menghentikan fallback.")
+                        nik_match_result = fallback_res
+                        break
+        elif nik_match_result != "TIDAK DITEMUKAN":
+            print(f"[!] Respon Cek NIK awal adalah '{nik_match_result}' (gangguan koneksi/server setelah 2x percobaan). Melewati fallback NIK.")
 
     # === EVALUASI MUTLAK: JIKA NIK TIDAK HIJAU / BUKAN 'DITEMUKAN', JANGAN SEKALI-KALI KLIK KIRIM! ===
     if nik_match_result != "DITEMUKAN":
@@ -616,13 +629,11 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
         print(f"[!] NIK Terakhir : {nik_baru}")
         print(f"[!] Status Hasil : {nik_match_result}")
         print(f"[!] PERINGATAN: Tombol 'Kirim' TIDAK AKAN ditekan demi keamanan data!")
-        print(f"[!] Membersihkan data dari antrean cache & melewati IDPEL ini...")
         print(f"[!] ========================================================\n")
 
-        # Hapus ID dari antrean cache scan agar proses lain / scan berikutnya bisa lanjut
-        remove_id_from_scan_cache(idpel, device=d)
-
         if nik_match_result == "TIDAK DITEMUKAN":
+            # Hapus dari cache scan hanya jika server valid merespon TIDAK DITEMUKAN
+            remove_id_from_scan_cache(idpel, device=d)
             print(f"[*] Mencatat ke '{OUT_NIK_TIDAK_DITEMUKAN}' dan menghapus dari '{csv_input_path}'...")
             append_to_log(OUT_NIK_TIDAK_DITEMUKAN, {
                 "id_pelanggan": idpel,
@@ -631,19 +642,23 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
                 "waktu": time.strftime("%Y-%m-%d %H:%M:%S")
             })
             remove_idpel_from_input_csv(csv_input_path, idpel)
+            status_return = "NIK_NOT_FOUND"
         else:
-            print(f"[!] Kendala koneksi atau server BPS lambat ('{nik_match_result}'). Mencatat ke '{OUT_GAGAL}'...")
+            # Kendala koneksi / timeout: JANGAN hapus dari cache scan agar bisa diproses ulang nanti
+            print(f"[!] Kendala koneksi / server BPS lambat ('{nik_match_result}').")
+            print("[*] Item ID DIPERTAHANKAN di antrean cache scan (tidak dihapus).")
             append_to_log(OUT_GAGAL, {
                 "id_pelanggan": idpel,
                 "NIK_Perbaikan": nik_baru,
                 "error": f"Pemadanan NIK gagal/tidak hijau ({nik_match_result}) - kendala koneksi/server BPS",
                 "waktu": time.strftime("%Y-%m-%d %H:%M:%S")
             })
+            status_return = "KONEKSI_ERROR"
 
         print("[*] Membatalkan pengisian form dan kembali ke halaman Daftar Assignment...")
         back_to_assignment_list(d)
         clear_search_box(d)
-        return "NIK_NOT_FOUND"
+        return status_return
 
     # 11. Simpan Perubahan & Konfirmasi Pengiriman (Loop Retry jika dialog belum terbuka)
     w_dev, h_dev = d.window_size()

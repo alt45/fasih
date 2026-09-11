@@ -333,6 +333,9 @@ def run_reverse_mode(target_device=None, custom_csv=None, is_pasca=False, enable
             elif status_hasil == "NIK_NOT_FOUND":
                 nik_tidak_ditemukan_count += 1
                 remove_id_from_scan_cache(idpel, device=d)
+            elif status_hasil in ["KONEKSI_ERROR", "UNKNOWN"]:
+                gagal_count += 1
+                print(f"[!] IDPEL {idpel} mengalami kendala koneksi server. Cache scan dipertahankan.")
             else:
                 idpel_tidak_ada_count += 1
                 remove_id_from_scan_cache(idpel, device=d)
@@ -463,6 +466,9 @@ def run_direct_random_mode(target_device=None, custom_json=None, is_pasca=True):
             elif status_hasil == "NIK_NOT_FOUND":
                 nik_tidak_ditemukan_count += 1
                 remove_id_from_scan_cache(item_id, device=d)
+            elif status_hasil in ["KONEKSI_ERROR", "UNKNOWN"]:
+                gagal_count += 1
+                print(f"[!] IDPEL {item_id} mengalami kendala koneksi server. Cache scan dipertahankan.")
             else:
                 idpel_tidak_ada_count += 1
                 remove_id_from_scan_cache(item_id, device=d)

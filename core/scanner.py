@@ -409,13 +409,17 @@ def scan_all_assignments_from_hp(d, scan_by="auto"):
     return collected
 
 
+CACHE_DIR = "cache"
+
+
 def get_cache_filename(device_or_wilayah=None):
     """
     Menghasilkan nama file cache berdasarkan kode wilayah (resource-id="wilayah1")
-    agar proses dapat dilanjutkan di HP lain untuk penugasan wilayah yang sama.
-    Contoh nama file: 'cache_scan_525215052151DABMYTB.json'
-    Jika wilayah tidak terdeteksi, fallback ke serial HP atau 'cache_scan.json'.
+    di dalam subfolder 'cache/' agar root direktori tetap bersih dan terorganisir.
+    Contoh nama file: 'cache/cache_scan_525215052151DABMYTB.json'
+    Jika wilayah tidak terdeteksi, fallback ke serial HP atau 'cache/cache_scan.json'.
     """
+    os.makedirs(CACHE_DIR, exist_ok=True)
     wilayah = None
     if isinstance(device_or_wilayah, str) and device_or_wilayah.strip():
         wilayah = device_or_wilayah.strip()
@@ -427,8 +431,21 @@ def get_cache_filename(device_or_wilayah=None):
 
     if wilayah:
         safe_name = re.sub(r'[\\/*?:"<>| ]', '_', str(wilayah))
-        return f"cache_scan_{safe_name}.json"
-    return "cache_scan.json"
+        base_name = f"cache_scan_{safe_name}.json"
+    else:
+        base_name = "cache_scan.json"
+
+    target_path = os.path.join(CACHE_DIR, base_name)
+    # Migrasi otomatis: jika ada file cache lama di root tapi belum ada di subfolder cache/
+    if os.path.exists(base_name) and not os.path.exists(target_path):
+        try:
+            import shutil
+            shutil.move(base_name, target_path)
+            print(f"[*] Memindahkan cache lama '{base_name}' ke subfolder '{target_path}'.")
+        except Exception:
+            pass
+
+    return target_path
 
 
 def scan_all_meters_from_hp(d, scan_by="auto"):
@@ -440,6 +457,7 @@ def remove_id_from_scan_cache(item_id, device=None, cache_file=None):
     """
     Menghapus item ID (ID Pelanggan / Nomor Meter) yang sudah selesai diproses dari cache scan.
     Mendukung multi-device secara aman tanpa bentrok antar proses HP.
+    Mencari file di subfolder 'cache/' maupun root untuk kompatibilitas.
     """
     if not item_id:
         return False
@@ -450,12 +468,13 @@ def remove_id_from_scan_cache(item_id, device=None, cache_file=None):
     elif device:
         target_files.append(get_cache_filename(device))
     else:
-        # Cari file cache_scan*.json di direktori saat ini
+        # Cari file cache_scan*.json di subfolder cache/ dan root
         try:
             import glob
-            target_files = glob.glob("cache_scan*.json")
+            target_files.extend(glob.glob(os.path.join(CACHE_DIR, "cache_scan*.json")))
+            target_files.extend(glob.glob("cache_scan*.json"))
         except Exception:
-            target_files = ["cache_scan.json"]
+            target_files = [os.path.join(CACHE_DIR, "cache_scan.json"), "cache_scan.json"]
             
     clean_target = str(item_id).strip()
     removed_any = False

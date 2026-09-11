@@ -33,6 +33,13 @@ class FallbackNIKProvider:
     """
     def __init__(self, json_path="nik.json", state_file=".nik_fallback_state.json",
                  invalid_file="nik_invalid.json", valid_file="nik_valid.json"):
+        # Auto-detect jika nik.json berada di folder 'nik/'
+        if json_path == "nik.json" and not os.path.exists("nik.json"):
+            if os.path.exists(os.path.join("nik", "nik.json")):
+                json_path = os.path.join("nik", "nik.json")
+            elif os.path.exists("nik/nik.json"):
+                json_path = "nik/nik.json"
+
         self.json_path = json_path
         self.state_file = state_file
         self.invalid_file = invalid_file
@@ -230,8 +237,8 @@ class FallbackNIKProvider:
 
 def pilih_file_json(judul_mode="Perbaikan Data NIK (Direct Mode 6)"):
     """
-    Menampilkan daftar file JSON yang tersedia di folder proyek dan meminta
-    pengguna memilih nomor urut file atau mengetik nama file secara manual.
+    Menampilkan daftar file JSON yang tersedia di folder proyek (main utama) dan di dalam folder 'nik/'.
+    Meminta pengguna memilih nomor urut file atau mengetik nama file secara manual.
     Jika user langsung menekan Enter atau memilih default, gunakan 'nik.json'.
     """
     ignore_files = {
@@ -241,50 +248,90 @@ def pilih_file_json(judul_mode="Perbaikan Data NIK (Direct Mode 6)"):
         "configfs.json",
     }
     
-    all_files = [f for f in os.listdir(".") if f.lower().endswith(".json") and os.path.isfile(f)]
-    candidate_files = [f for f in all_files if f.lower() not in ignore_files and not f.startswith(".")]
-    candidate_files.sort()
+    # 1. Ambil file JSON di main utama (root)
+    main_files = [
+        f for f in os.listdir(".")
+        if f.lower().endswith(".json") and os.path.isfile(f)
+        and f.lower() not in ignore_files
+        and not f.startswith(".")
+        and not f.startswith("cache_scan")
+    ]
+    main_files.sort()
 
-    if "nik.json" in candidate_files:
-        candidate_files.remove("nik.json")
-        candidate_files.insert(0, "nik.json")
+    # 2. Ambil file JSON di dalam folder 'nik' jika folder tersebut ada
+    nik_files = []
+    nik_dir = "nik"
+    if os.path.exists(nik_dir) and os.path.isdir(nik_dir):
+        for f in os.listdir(nik_dir):
+            if f.lower().endswith(".json") and f.lower() not in ignore_files and not f.startswith("."):
+                full_p = os.path.join(nik_dir, f).replace("\\", "/")
+                if os.path.isfile(full_p):
+                    nik_files.append(full_p)
+        nik_files.sort()
+
+    # Gabungkan kandidat file
+    candidate_files = []
+    default_candidate = None
+
+    # Tentukan kandidat default jika ada nik.json
+    if "nik.json" in main_files:
+        default_candidate = "nik.json"
+    elif "nik/nik.json" in nik_files or os.path.join("nik", "nik.json") in nik_files:
+        default_candidate = "nik/nik.json"
+
+    # Masukkan file main utama
+    candidate_files.extend(main_files)
+
+    # Masukkan file dari folder nik
+    for nf in nik_files:
+        if nf not in candidate_files:
+            candidate_files.append(nf)
+
+    # Jika ada default_candidate, posisikan di urutan paling atas [1]
+    if default_candidate and default_candidate in candidate_files:
+        candidate_files.remove(default_candidate)
+        candidate_files.insert(0, default_candidate)
 
     print()
-    print("╔══════════════════════════════════════════════════════════╗")
+    print("╔══════════════════════════════════════════════════════════════════════╗")
     mode_text = f"PILIH FILE JSON NIK - {judul_mode}" if judul_mode else "PILIH FILE JSON NIK"
-    print(f"║  {mode_text:<56}║")
-    print("╠══════════════════════════════════════════════════════════╣")
+    print(f"║  {mode_text:<68}║")
+    print("╠══════════════════════════════════════════════════════════════════════╣")
 
     if candidate_files:
-        print("║  File JSON yang terdeteksi di folder:                    ║")
-        for i, f_name in enumerate(candidate_files, start=1):
+        print("║  File JSON yang terdeteksi (Main Utama & Folder 'nik/'):             ║")
+        for i, f_path in enumerate(candidate_files, start=1):
             count_str = ""
             try:
-                with open(f_name, "r", encoding="utf-8", errors="ignore") as f:
+                with open(f_path, "r", encoding="utf-8", errors="ignore") as f:
                     data = json.load(f)
                     if isinstance(data, list):
                         count_str = f"({len(data)} NIK)"
             except Exception:
                 pass
-            item_str = f"[{i}] {f_name}"
-            print(f"║   {item_str:<32} {count_str:>20} ║")
+            loc_tag = "[Folder nik]" if f_path.startswith("nik/") or f_path.startswith("nik" + os.sep) else "[Main]"
+            display_name = f_path
+            item_str = f"[{i}] {display_name}"
+            print(f"║   {item_str:<34} {loc_tag:<14} {count_str:>18} ║")
     else:
-        print("║  (Tidak ada file JSON selain default terdeteksi)        ║")
+        print("║  (Tidak ada file JSON stok NIK yang terdeteksi)                      ║")
 
-    print("║                                                          ║")
-    print("║   [Enter] Gunakan default: 'nik.json'                    ║")
-    print("║   [0] Batal / Keluar                                     ║")
-    print("╚══════════════════════════════════════════════════════════╝")
+    print("║                                                                      ║")
+    def_label = f"Gunakan default: '{default_candidate}'" if default_candidate else "Gunakan default: 'nik.json'"
+    print(f"║   [Enter] {def_label:<59}║")
+    print("║   [0] Batal / Keluar                                                 ║")
+    print("╚══════════════════════════════════════════════════════════════════════╝")
     print()
 
     while True:
-        prompt_text = f"   Pilih nomor [1-{len(candidate_files)}] atau tekan Enter [nik.json]: " if candidate_files else "   Ketik nama file JSON (atau tekan Enter untuk nik.json): "
+        def_prompt = default_candidate or "nik.json"
+        prompt_text = f"   Pilih nomor [1-{len(candidate_files)}] atau tekan Enter [{def_prompt}]: " if candidate_files else f"   Ketik nama file JSON (atau tekan Enter untuk {def_prompt}): "
         pilihan = input(prompt_text).strip()
 
         if not pilihan:
-            default_file = "nik.json"
-            print(f"[OK] Menggunakan file default: {default_file}\n")
-            return default_file
+            chosen = default_candidate or "nik.json"
+            print(f"[OK] Menggunakan file default: {chosen}\n")
+            return chosen
 
         if pilihan == "0" or pilihan.lower() in ["batal", "exit", "keluar"]:
             print("[*] Pemilihan file JSON dibatalkan.")
@@ -302,13 +349,22 @@ def pilih_file_json(judul_mode="Perbaikan Data NIK (Direct Mode 6)"):
                 continue
 
         # Jika user mengetik nama file secara langsung
-        custom_name = pilihan
-        if not custom_name.lower().endswith(".json") and not os.path.exists(custom_name):
-            if os.path.exists(custom_name + ".json"):
-                custom_name = custom_name + ".json"
+        custom_name = pilihan.strip()
+        candidates_to_check = [
+            custom_name,
+            custom_name + ".json" if not custom_name.lower().endswith(".json") else custom_name,
+            os.path.join("nik", custom_name),
+            os.path.join("nik", custom_name + ".json") if not custom_name.lower().endswith(".json") else os.path.join("nik", custom_name),
+        ]
 
-        if os.path.exists(custom_name):
-            print(f"[OK] File JSON dipilih: {custom_name}\n")
-            return custom_name
+        matched = None
+        for cand in candidates_to_check:
+            if os.path.exists(cand) and os.path.isfile(cand):
+                matched = cand.replace("\\", "/")
+                break
+
+        if matched:
+            print(f"[OK] File JSON dipilih: {matched}\n")
+            return matched
         else:
-            print(f"   [!] File '{custom_name}' tidak ditemukan di folder. Silakan coba lagi.")
+            print(f"   [!] File '{custom_name}' tidak ditemukan di main utama maupun di folder 'nik/'. Silakan coba lagi.")
