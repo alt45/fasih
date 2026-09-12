@@ -318,6 +318,10 @@ def run_reverse_mode(target_device=None, custom_csv=None, is_pasca=False, enable
         daya_info = f" (Daya: {daya_val})" if daya_val else ""
         print(f"\n>>> Progress Reverse: [{idx}/{total_cocok}] IDPEL: {idpel}{meter_info}{daya_info} <<<")
 
+        target_ids = [idpel]
+        if meter and meter != idpel:
+            target_ids.append(meter)
+
         try:
             status_hasil = process_update_nik(
                 d,
@@ -328,21 +332,22 @@ def run_reverse_mode(target_device=None, custom_csv=None, is_pasca=False, enable
             )
             if status_hasil == "SUKSES":
                 sukses_count += 1
-                remove_id_from_scan_cache(idpel, device=d)
+                remove_id_from_scan_cache(target_ids, device=d)
             elif status_hasil == "SKIPPED_BELUM_SURVEY":
                 skipped_count += 1
+                remove_id_from_scan_cache(target_ids, device=d)
             elif status_hasil == "IDPEL_NOT_FOUND":
                 idpel_tidak_ada_count += 1
-                remove_id_from_scan_cache(idpel, device=d)
+                remove_id_from_scan_cache(target_ids, device=d)
             elif status_hasil == "NIK_NOT_FOUND":
                 nik_tidak_ditemukan_count += 1
-                remove_id_from_scan_cache(idpel, device=d)
+                remove_id_from_scan_cache(target_ids, device=d)
             elif status_hasil in ["KONEKSI_ERROR", "UNKNOWN"]:
                 gagal_count += 1
                 print(f"[!] IDPEL {idpel} mengalami kendala koneksi server. Cache scan dipertahankan.")
             else:
                 idpel_tidak_ada_count += 1
-                remove_id_from_scan_cache(idpel, device=d)
+                remove_id_from_scan_cache(target_ids, device=d)
         except ApiLimitError as e:
             print_api_limit_banner()
             print(f"[X] PROSES REVERSE DIHENTIKAN: {e}")
@@ -464,6 +469,7 @@ def run_direct_random_mode(target_device=None, custom_json=None, is_pasca=True):
                 remove_id_from_scan_cache(item_id, device=d)
             elif status_hasil == "SKIPPED_BELUM_SURVEY":
                 skipped_count += 1
+                remove_id_from_scan_cache(item_id, device=d)
             elif status_hasil == "IDPEL_NOT_FOUND":
                 idpel_tidak_ada_count += 1
                 remove_id_from_scan_cache(item_id, device=d)

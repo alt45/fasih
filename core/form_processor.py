@@ -34,9 +34,13 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
     """
     idpel = str(row_data["id_pelanggan"]).strip()
     nik_baru = str(row_data["NIK_Perbaikan"]).strip()
+    no_meter = str(row_data.get("no_meter", "")).strip()
+    target_ids = [idpel]
+    if no_meter and no_meter != idpel:
+        target_ids.append(no_meter)
     
     print(f"\n========================================================")
-    print(f"[*] MEMPROSES IDPEL : {idpel}")
+    print(f"[*] MEMPROSES IDPEL : {idpel}" + (f" (No. Meter: {no_meter})" if no_meter else ""))
     print(f"    NIK BARU TARGET : {nik_baru}")
     print(f"========================================================")
 
@@ -72,7 +76,7 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
             "keterangan": "Tidak ditemukan di tabel assignment"
         })
         remove_idpel_from_input_csv(csv_input_path, idpel)
-        remove_id_from_scan_cache(idpel, device=d)
+        remove_id_from_scan_cache(target_ids, device=d)
         clear_search_box(d)
         return "IDPEL_NOT_FOUND"
 
@@ -232,10 +236,11 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
             "keterangan": "Belum tersurvei (terdeteksi tombol Ambil Waktu di Blok I)",
             "waktu": time.strftime("%Y-%m-%d %H:%M:%S")
         })
-        remove_id_from_scan_cache(idpel, device=d)
+        remove_id_from_scan_cache(target_ids, device=d)
         remove_idpel_from_input_csv(csv_input_path, idpel)
         print("[*] Membatalkan/menutup form dan kembali ke halaman Daftar Assignment...")
         back_to_assignment_list(d)
+        remove_id_from_scan_cache(target_ids, device=d)
         clear_search_box(d)
         return "SKIPPED_BELUM_SURVEY"
 
@@ -286,9 +291,10 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
                     "keterangan": "Belum tersurvei (Cek ID Pelanggan tidak ada, terdeteksi Ambil Waktu/Kirim)",
                     "waktu": time.strftime("%Y-%m-%d %H:%M:%S")
                 })
-                remove_id_from_scan_cache(idpel, device=d)
+                remove_id_from_scan_cache(target_ids, device=d)
                 remove_idpel_from_input_csv(csv_input_path, idpel)
                 back_to_assignment_list(d)
+                remove_id_from_scan_cache(target_ids, device=d)
                 clear_search_box(d)
                 return "SKIPPED_BELUM_SURVEY"
 
@@ -361,9 +367,10 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
                 "keterangan": "Belum tersurvei (terdeteksi setelah scroll)",
                 "waktu": time.strftime("%Y-%m-%d %H:%M:%S")
             })
-            remove_id_from_scan_cache(idpel, device=d)
+            remove_id_from_scan_cache(target_ids, device=d)
             remove_idpel_from_input_csv(csv_input_path, idpel)
             back_to_assignment_list(d)
+            remove_id_from_scan_cache(target_ids, device=d)
             clear_search_box(d)
             return "SKIPPED_BELUM_SURVEY"
 
@@ -685,7 +692,7 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
 
         if nik_match_result == "TIDAK DITEMUKAN":
             # Hapus dari cache scan hanya jika server valid merespon TIDAK DITEMUKAN
-            remove_id_from_scan_cache(idpel, device=d)
+            remove_id_from_scan_cache(target_ids, device=d)
             print(f"[*] Mencatat ke '{OUT_NIK_TIDAK_DITEMUKAN}' dan menghapus dari '{csv_input_path}'...")
             append_to_log(OUT_NIK_TIDAK_DITEMUKAN, {
                 "id_pelanggan": idpel,
@@ -987,7 +994,7 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
     
     # Hapus dari CSV input dan cache scan
     remove_idpel_from_input_csv(csv_input_path, idpel)
-    remove_id_from_scan_cache(idpel, device=d)
+    remove_id_from_scan_cache(target_ids, device=d)
 
     # Catat NIK valid & terpakai ke nik_valid.json dan hapus dari file stok JSON
     if fallback_nik_provider is not None:

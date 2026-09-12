@@ -178,6 +178,23 @@ def scan_all_assignments_from_hp(d, scan_by="auto"):
                     pilihan = input("Gunakan data cache ini untuk melanjutkan tanpa scan ulang? (y/n): ").strip().lower()
                     if pilihan in ['y', 'yes']:
                         print("[✓] Menggunakan data dari cache. Mengabaikan pemindaian ulang.")
+                        
+                        # Sinkronisasi cache dengan log: buang ID yang sudah selesai / di-skip belum tersurvei
+                        done_ids = extract_processed_ids_from_logs()
+                        if done_ids:
+                            initial_len = len(cached_ids)
+                            cleaned_ids = [cid for cid in cached_ids if str(cid).strip() not in done_ids]
+                            if len(cleaned_ids) < initial_len:
+                                diff_c = initial_len - len(cleaned_ids)
+                                print(f"[*] Sinkronisasi Cache: {diff_c} data yang berstatus (selesai / di-skip belum survei) otomatis dihapus dari antrean.")
+                                cache_data["data"] = cleaned_ids
+                                try:
+                                    with open(cache_file, "w", encoding="utf-8") as f:
+                                        json.dump(cache_data, f, indent=4)
+                                except Exception:
+                                    pass
+                                return cleaned_ids
+
                         return cached_ids
                     elif pilihan in ['n', 'no']:
                         print("[*] Memilih untuk scan ulang. Memulai pemindaian dari awal...")
@@ -412,6 +429,37 @@ def scan_all_assignments_from_hp(d, scan_by="auto"):
 CACHE_DIR = "cache"
 
 
+def extract_processed_ids_from_logs():
+    """
+    Membaca semua ID Pelanggan / Nomor Meter yang sudah selesai diproses,
+    gagal, atau di-skip karena belum tersurvei dari file log output CSV.
+    Digunakan untuk membersihkan antrean cache scan secara otomatis.
+    """
+    import csv
+    from .config import (
+        OUT_SUKSES,
+        OUT_BELUM_SURVEY,
+        OUT_TIDAK_DITEMUKAN,
+        OUT_NIK_TIDAK_DITEMUKAN,
+    )
+    processed = set()
+    for log_file in [OUT_BELUM_SURVEY, OUT_SUKSES, OUT_TIDAK_DITEMUKAN, OUT_NIK_TIDAK_DITEMUKAN]:
+        if os.path.exists(log_file) and os.path.getsize(log_file) > 0:
+            try:
+                with open(log_file, "r", encoding="utf-8", errors="ignore") as f:
+                    reader = csv.DictReader(f, delimiter=";")
+                    for r in reader:
+                        for key in ["id_pelanggan", "no_meter", "idpel", "target"]:
+                            val = r.get(key)
+                            if val:
+                                s = str(val).strip()
+                                if s:
+                                    processed.add(s)
+            except Exception:
+                pass
+    return processed
+
+
 def get_cache_filename(device_or_wilayah=None):
     """
     Menghasilkan nama file cache berdasarkan kode wilayah (resource-id="wilayah1")
@@ -453,49 +501,80 @@ def scan_all_meters_from_hp(d, scan_by="auto"):
     return scan_all_assignments_from_hp(d, scan_by=scan_by)
 
 
-def remove_id_from_scan_cache(item_id, device=None, cache_file=None):
+def remove_id_from_scan_cache(item_ids, device=None, cache_file=None):
     """
-    Menghapus item ID (ID Pelanggan / Nomor Meter) yang sudah selesai diproses dari cache scan.
-    Mendukung multi-device secara aman tanpa bentrok antar proses HP.
-    Mencari file di subfolder 'cache/' maupun root untuk kompatibilitas.
+    Menghapus item ID (ID Pelanggan / Nomor Meter) yang sudah selesai diproses atau di-skip dari cache scan.
+    - Mendukung ID tunggal (string) maupun kumpulan ID (list/tuple/set).
+    - Memeriksa seluruh file cache di subfolder 'cache/' dan root.
+    - Menjamin penghapusan ID dari file cache JSON sehingga tidak akan pernah diulang kembali.
     """
-    if not item_id:
+    if not item_ids:
         return False
-        
-    target_files = []
-    if cache_file:
-        target_files.append(cache_file)
-    elif device:
-        target_files.append(get_cache_filename(device))
+
+    # Normalisasi item_ids menjadi set string unik
+    if isinstance(item_ids, (list, tuple, set)):
+        raw_list = list(item_ids)
     else:
-        # Cari file cache_scan*.json di subfolder cache/ dan root
-        try:
-            import glob
-            target_files.extend(glob.glob(os.path.join(CACHE_DIR, "cache_scan*.json")))
-            target_files.extend(glob.glob("cache_scan*.json"))
-        except Exception:
-            target_files = [os.path.join(CACHE_DIR, "cache_scan.json"), "cache_scan.json"]
-            
-    clean_target = str(item_id).strip()
+        raw_list = [item_ids]
+
+    clean_targets = set()
+    for x in raw_list:
+        if x:
+            s = str(x).strip()
+            if s:
+                clean_targets.add(s)
+
+    if not clean_targets:
+        return False
+
+    target_files = []
+    if cache_file and os.path.exists(cache_file):
+        target_files.append(cache_file)
+
+    # 1. Coba deteksi file dari device jika diberikan
+    if device:
+        dev_file = get_cache_filename(device)
+        if dev_file and os.path.exists(dev_file) and dev_file not in target_files:
+            target_files.append(dev_file)
+
+    # 2. SELALU sertakan semua file cache_scan*.json di subfolder 'cache/' dan root.
+    # Hal ini sangat krusial: jika saat pemanggilan fungsi ini layar HP sedang berada
+    # di dalam kuesioner / BLOK I (sehingga 'wilayah1' tidak terdeteksi di layar),
+    # file cache wilayah yang sebenarnya tetap ditemukan dan diupdate!
+    try:
+        import glob
+        all_cache = glob.glob(os.path.join(CACHE_DIR, "cache_scan*.json"))
+        all_cache.extend(glob.glob("cache_scan*.json"))
+        for f in all_cache:
+            if f not in target_files and os.path.exists(f):
+                target_files.append(f)
+    except Exception:
+        pass
+
     removed_any = False
-    
     for c_file in target_files:
         if not os.path.exists(c_file) or os.path.getsize(c_file) == 0:
             continue
         try:
             with open(c_file, "r", encoding="utf-8") as f:
                 cache_data = json.load(f)
-                
+
             data_list = cache_data.get("data", [])
-            if clean_target in data_list:
-                data_list.remove(clean_target)
+            file_modified = False
+
+            for target in clean_targets:
+                if target in data_list:
+                    data_list.remove(target)
+                    file_modified = True
+                    print(f"[✓] ID '{target}' BERHASIL DIHAPUS dari cache '{c_file}' (Sisa antrean: {len(data_list)}).")
+                    removed_any = True
+
+            if file_modified:
                 cache_data["data"] = data_list
                 with open(c_file, "w", encoding="utf-8") as f:
                     json.dump(cache_data, f, indent=4)
-                print(f"[*] ID '{clean_target}' dihapus dari {c_file} (Sisa antrean: {len(data_list)}).")
-                removed_any = True
-        except Exception:
-            pass
-            
+        except Exception as e:
+            print(f"[!] Gagal update file cache '{c_file}': {e}")
+
     return removed_any
 
