@@ -240,7 +240,6 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
         remove_idpel_from_input_csv(csv_input_path, idpel)
         print("[*] Membatalkan/menutup form dan kembali ke halaman Daftar Assignment...")
         back_to_assignment_list(d)
-        remove_id_from_scan_cache(target_ids, device=d)
         clear_search_box(d)
         return "SKIPPED_BELUM_SURVEY"
 
@@ -294,7 +293,6 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
                 remove_id_from_scan_cache(target_ids, device=d)
                 remove_idpel_from_input_csv(csv_input_path, idpel)
                 back_to_assignment_list(d)
-                remove_id_from_scan_cache(target_ids, device=d)
                 clear_search_box(d)
                 return "SKIPPED_BELUM_SURVEY"
 
@@ -370,7 +368,6 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
             remove_id_from_scan_cache(target_ids, device=d)
             remove_idpel_from_input_csv(csv_input_path, idpel)
             back_to_assignment_list(d)
-            remove_id_from_scan_cache(target_ids, device=d)
             clear_search_box(d)
             return "SKIPPED_BELUM_SURVEY"
 

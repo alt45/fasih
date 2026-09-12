@@ -129,6 +129,7 @@ def scan_all_assignments_from_hp(d, scan_by="auto"):
     else:
         cache_file = get_cache_filename(d)
         
+    set_active_cache_file(cache_file)
     print(f"[*] Target file cache: '{cache_file}'")
 
     # Ambil 5 ID pertama dari layar awal sebagai signature tambahan
@@ -179,8 +180,9 @@ def scan_all_assignments_from_hp(d, scan_by="auto"):
                     if pilihan in ['y', 'yes']:
                         print("[✓] Menggunakan data dari cache. Mengabaikan pemindaian ulang.")
                         
-                        # Sinkronisasi cache dengan log: buang ID yang sudah selesai / di-skip belum tersurvei
+                        # Sinkronisasi cache berjalan dengan log: buang ID yang sudah selesai / di-skip belum tersurvei
                         done_ids = extract_processed_ids_from_logs()
+                        final_ids = cached_ids
                         if done_ids:
                             initial_len = len(cached_ids)
                             cleaned_ids = [cid for cid in cached_ids if str(cid).strip() not in done_ids]
@@ -193,9 +195,10 @@ def scan_all_assignments_from_hp(d, scan_by="auto"):
                                         json.dump(cache_data, f, indent=4)
                                 except Exception:
                                     pass
-                                return cleaned_ids
+                                final_ids = cleaned_ids
 
-                        return cached_ids
+                        set_active_cache_file(cache_file, initial_data=cache_data)
+                        return final_ids
                     elif pilihan in ['n', 'no']:
                         print("[*] Memilih untuk scan ulang. Memulai pemindaian dari awal...")
                         break
@@ -410,16 +413,18 @@ def scan_all_assignments_from_hp(d, scan_by="auto"):
     print(f"[✓] Berhasil mengumpulkan {len(collected)} {unit_label} unik dari seluruh halaman HP.")
     
     cache_file = get_cache_filename(wilayah_id or d)
+    cache_payload = {
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "wilayah_id": wilayah_id or "",
+        "device_serial": getattr(d, 'serial', 'unknown'),
+        "scan_type": detected_type,
+        "data": collected
+    }
     try:
         with open(cache_file, "w", encoding="utf-8") as f:
-            json.dump({
-                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "wilayah_id": wilayah_id or "",
-                "device_serial": getattr(d, 'serial', 'unknown'),
-                "scan_type": detected_type,
-                "data": collected
-            }, f, indent=4)
+            json.dump(cache_payload, f, indent=4)
         print(f"[*] Hasil scan berhasil disimpan ke '{cache_file}' untuk penggunaan selanjutnya.")
+        set_active_cache_file(cache_file, initial_data=cache_payload)
     except Exception as e:
         print(f"[!] Gagal menyimpan cache: {e}")
         
@@ -501,80 +506,139 @@ def scan_all_meters_from_hp(d, scan_by="auto"):
     return scan_all_assignments_from_hp(d, scan_by=scan_by)
 
 
+ACTIVE_CACHE_FILE = None
+_ACTIVE_CACHE_DATA = None
+_ACTIVE_CACHE_SET = None
+_ACTIVE_CACHE_MTIME = 0
+
+
+def set_active_cache_file(path, initial_data=None):
+    """
+    Menetapkan SATU file cache yang sedang aktif/berjalan dalam sesi ini,
+    serta memuat datanya ke dalam memori untuk pencarian instan O(1).
+    """
+    global ACTIVE_CACHE_FILE, _ACTIVE_CACHE_DATA, _ACTIVE_CACHE_SET, _ACTIVE_CACHE_MTIME
+    if not path:
+        return
+    ACTIVE_CACHE_FILE = path
+    if initial_data and isinstance(initial_data, dict):
+        _ACTIVE_CACHE_DATA = initial_data
+        _ACTIVE_CACHE_SET = set(str(x).strip() for x in initial_data.get("data", []))
+        if os.path.exists(path):
+            _ACTIVE_CACHE_MTIME = os.path.getmtime(path)
+        else:
+            _ACTIVE_CACHE_MTIME = 0
+    elif os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                _ACTIVE_CACHE_DATA = json.load(f)
+            _ACTIVE_CACHE_SET = set(str(x).strip() for x in _ACTIVE_CACHE_DATA.get("data", []))
+            _ACTIVE_CACHE_MTIME = os.path.getmtime(path)
+        except Exception:
+            _ACTIVE_CACHE_DATA = None
+            _ACTIVE_CACHE_SET = None
+            _ACTIVE_CACHE_MTIME = 0
+
+
+def get_active_cache_file():
+    """Mengembalikan path SATU file cache yang sedang aktif/berjalan."""
+    global ACTIVE_CACHE_FILE
+    return ACTIVE_CACHE_FILE
+
+
+def resolve_active_cache_file(device=None, cache_file=None):
+    """
+    Menentukan SATU file cache yang sedang aktif berjalan.
+    Hanya menargetkan satu file aktif agar pemrosesan per IDPEL tetap cepat.
+    """
+    global ACTIVE_CACHE_FILE
+    if cache_file and os.path.exists(cache_file):
+        return cache_file
+
+    if ACTIVE_CACHE_FILE and os.path.exists(ACTIVE_CACHE_FILE):
+        return ACTIVE_CACHE_FILE
+
+    if device:
+        dev_file = get_cache_filename(device)
+        if dev_file and os.path.exists(dev_file):
+            set_active_cache_file(dev_file)
+            return dev_file
+
+        # Fallback jika di layar form (wilayah1 tidak ada): ambil cache terbaru di folder cache/
+        try:
+            import glob
+            files = glob.glob(os.path.join(CACHE_DIR, "cache_scan*.json"))
+            if files:
+                newest = max(files, key=os.path.getmtime)
+                set_active_cache_file(newest)
+                return newest
+        except Exception:
+            pass
+
+    return None
+
+
 def remove_id_from_scan_cache(item_ids, device=None, cache_file=None):
     """
-    Menghapus item ID (ID Pelanggan / Nomor Meter) yang sudah selesai diproses atau di-skip dari cache scan.
-    - Mendukung ID tunggal (string) maupun kumpulan ID (list/tuple/set).
-    - Memeriksa seluruh file cache di subfolder 'cache/' dan root.
-    - Menjamin penghapusan ID dari file cache JSON sehingga tidak akan pernah diulang kembali.
+    Menghapus item ID (ID Pelanggan / Nomor Meter) dari SATU file cache yang sedang berjalan.
+    - Fokus HANYA pada file cache aktif, tidak memeriksa/membuka file cache lain.
+    - Menggunakan in-memory set O(1): jika ID tidak ada di cache aktif, langsung return 0ms tanpa I/O disk.
+    - Menulis hanya ke 1 file cache aktif saat ID benar-benar ada dan perlu dihapus.
     """
+    global ACTIVE_CACHE_FILE, _ACTIVE_CACHE_DATA, _ACTIVE_CACHE_SET, _ACTIVE_CACHE_MTIME
+
     if not item_ids:
         return False
 
-    # Normalisasi item_ids menjadi set string unik
+    # Normalisasi item_ids menjadi list string
     if isinstance(item_ids, (list, tuple, set)):
         raw_list = list(item_ids)
     else:
         raw_list = [item_ids]
 
-    clean_targets = set()
-    for x in raw_list:
-        if x:
-            s = str(x).strip()
-            if s:
-                clean_targets.add(s)
-
+    clean_targets = [str(x).strip() for x in raw_list if x and str(x).strip()]
     if not clean_targets:
         return False
 
-    target_files = []
-    if cache_file and os.path.exists(cache_file):
-        target_files.append(cache_file)
+    target_file = resolve_active_cache_file(device=device, cache_file=cache_file)
+    if not target_file or not os.path.exists(target_file):
+        return False
 
-    # 1. Coba deteksi file dari device jika diberikan
-    if device:
-        dev_file = get_cache_filename(device)
-        if dev_file and os.path.exists(dev_file) and dev_file not in target_files:
-            target_files.append(dev_file)
-
-    # 2. SELALU sertakan semua file cache_scan*.json di subfolder 'cache/' dan root.
-    # Hal ini sangat krusial: jika saat pemanggilan fungsi ini layar HP sedang berada
-    # di dalam kuesioner / BLOK I (sehingga 'wilayah1' tidak terdeteksi di layar),
-    # file cache wilayah yang sebenarnya tetap ditemukan dan diupdate!
+    # Sinkronisasi in-memory cache jika belum dimuat atau file berubah dari luar
     try:
-        import glob
-        all_cache = glob.glob(os.path.join(CACHE_DIR, "cache_scan*.json"))
-        all_cache.extend(glob.glob("cache_scan*.json"))
-        for f in all_cache:
-            if f not in target_files and os.path.exists(f):
-                target_files.append(f)
+        cur_mtime = os.path.getmtime(target_file)
     except Exception:
-        pass
+        return False
 
-    removed_any = False
-    for c_file in target_files:
-        if not os.path.exists(c_file) or os.path.getsize(c_file) == 0:
-            continue
-        try:
-            with open(c_file, "r", encoding="utf-8") as f:
-                cache_data = json.load(f)
+    if _ACTIVE_CACHE_DATA is None or _ACTIVE_CACHE_SET is None or ACTIVE_CACHE_FILE != target_file or _ACTIVE_CACHE_MTIME != cur_mtime:
+        set_active_cache_file(target_file)
 
-            data_list = cache_data.get("data", [])
-            file_modified = False
+    if _ACTIVE_CACHE_SET is None:
+        return False
 
-            for target in clean_targets:
-                if target in data_list:
-                    data_list.remove(target)
-                    file_modified = True
-                    print(f"[✓] ID '{target}' BERHASIL DIHAPUS dari cache '{c_file}' (Sisa antrean: {len(data_list)}).")
-                    removed_any = True
+    # Cek instan O(1) di memori: adakah ID yang perlu dihapus?
+    to_remove = [t for t in clean_targets if t in _ACTIVE_CACHE_SET]
+    if not to_remove:
+        # ID tidak ada di antrean cache berjalan (atau sudah terhapus sebelumnya), 0 disk I/O!
+        return False
 
-            if file_modified:
-                cache_data["data"] = data_list
-                with open(c_file, "w", encoding="utf-8") as f:
-                    json.dump(cache_data, f, indent=4)
-        except Exception as e:
-            print(f"[!] Gagal update file cache '{c_file}': {e}")
+    # Hapus dari data in-memory
+    data_list = _ACTIVE_CACHE_DATA.get("data", [])
+    for t in to_remove:
+        _ACTIVE_CACHE_SET.discard(t)
+        if t in data_list:
+            data_list.remove(t)
+        print(f"[OK] ID '{t}' BERHASIL DIHAPUS dari cache berjalan '{target_file}' (Sisa antrean: {len(data_list)}).")
 
-    return removed_any
+    _ACTIVE_CACHE_DATA["data"] = data_list
+
+    # Tulis perubahan hanya ke SATU file cache aktif
+    try:
+        with open(target_file, "w", encoding="utf-8") as f:
+            json.dump(_ACTIVE_CACHE_DATA, f, indent=4)
+        _ACTIVE_CACHE_MTIME = os.path.getmtime(target_file)
+        return True
+    except Exception as e:
+        print(f"[!] Gagal update cache berjalan '{target_file}': {e}")
+        return False
 
