@@ -15,7 +15,7 @@ Thumbs.db
 
 # Output & Dump files dari uiautomator2
 *.xml
-
+*.pdf
 
 # File CSV pelacakan sukses
 *.csv

@@ -27,6 +27,72 @@ from .exceptions import (
 )
 
 
+def check_kuesioner_belum_tersurvei(d):
+    """
+    Mendeteksi apakah form yang sedang dibuka di BLOK I adalah kuesioner yang BELUM TERSURVEI.
+    Karakteristik pasti:
+    - Di bagian bawah form BLOK I, terdapat tombol navigasi 'BERIKUTNYA BLOK IV' (resource-id='fasih-form-nav-next-button').
+    - TIDAK ADA tombol navigasi 'BERIKUTNYA BLOK II'.
+    - Tombol 'Ambil Waktu' TIDAK digunakan sebagai kriteria karena kuesioner normal juga dapat memuatnya.
+    """
+    xml_blok1 = ""
+    try:
+        xml_blok1 = d.dump_hierarchy()
+    except Exception:
+        pass
+
+    # 1. Cek tombol navigasi fasih-form-nav-next-button
+    btn_next = d(resourceId="fasih-form-nav-next-button")
+    btn_text = ""
+    if btn_next.exists:
+        try:
+            btn_text = btn_next.info.get("text", "").strip()
+        except Exception:
+            pass
+
+    # Cek keberadaan tombol pindah ke BLOK IV
+    has_next_b4 = (
+        d(resourceId="fasih-form-nav-next-button", text="BERIKUTNYA BLOK IV").exists
+        or d(text="BERIKUTNYA BLOK IV").exists
+        or bool(re.search(r'(?i)blok\s*(iv|4)', btn_text))
+        or d(textMatches=r'(?i).*(berikutnya|pindah).*blok\s*(iv|4).*').exists
+        or bool(re.search(r'(?i)(?:berikutnya|pindah)\s*blok\s*(?:iv|4)', xml_blok1))
+    )
+
+    # Cek keberadaan tombol menuju BLOK II (kuesioner normal/sudah survei)
+    has_next_b2 = (
+        d(resourceId="fasih-form-nav-next-button", text="BERIKUTNYA BLOK II").exists
+        or d(text="BERIKUTNYA BLOK II").exists
+        or bool(re.search(r'(?i)blok\s*(ii|2)', btn_text))
+        or d(textMatches=r'(?i).*(berikutnya|pindah).*blok\s*(ii|2).*').exists
+        or bool(re.search(r'(?i)(?:berikutnya|pindah)\s*blok\s*(?:ii|2)', xml_blok1))
+    )
+
+    if has_next_b4 and not has_next_b2:
+        return True, "terdeteksi tombol navigasi 'BERIKUTNYA BLOK IV' di form Blok I"
+
+    # Jika tombol navigasi belum tampak di viewport (misal layar kecil/belum discroll),
+    # gulir layar sedikit ke bawah untuk memastikan tombol navigasi di bagian bawah form
+    if not has_next_b4 and not has_next_b2:
+        scroll_down_small(d, duration=0.35)
+        time.sleep(0.5)
+        btn_next = d(resourceId="fasih-form-nav-next-button")
+        if btn_next.exists:
+            try:
+                btn_text = btn_next.info.get("text", "").strip()
+            except Exception:
+                pass
+        if (
+            d(resourceId="fasih-form-nav-next-button", text="BERIKUTNYA BLOK IV").exists
+            or d(text="BERIKUTNYA BLOK IV").exists
+            or bool(re.search(r'(?i)blok\s*(iv|4)', btn_text))
+            or d(textMatches=r'(?i).*(berikutnya|pindah).*blok\s*(iv|4).*').exists
+        ):
+            return True, "terdeteksi tombol navigasi 'BERIKUTNYA BLOK IV' di form Blok I setelah scroll"
+
+    return False, ""
+
+
 def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=False, fallback_nik_provider=None):
     """
     Memproses satu baris data IDPEL:
@@ -189,51 +255,26 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
         if (
             d(text="Cek ID Pelanggan").exists
             or d(text="BERIKUTNYA BLOK II").exists
+            or d(text="BERIKUTNYA BLOK IV").exists
             or d(textContains="ID pelanggan").exists
             or d(textContains="BLOK I").exists
-            or d(text="Ambil Waktu").exists
-            or d(textContains="Ambil Waktu").exists
+            or d(resourceId="fasih-form-nav-next-button").exists
         ):
             break
         time.sleep(0.3)
 
     # === DETEKSI KUESIONER BELUM TERSURVEI DI BLOK I (SKIP OTOMATIS SEBELUM CEK APAPUN) ===
-    # Pada data yang belum disurvei, muncul tombol 'Ambil Waktu' di BLOK I.
-    # Data ini belum disurvei di lapangan sehingga NIK tidak dapat diperbaiki.
-    # Wajib di-skip langsung dan beralih ke IDPEL lain (seperti pada Menu Pasca / Menu 6).
-    xml_blok1 = ""
-    try:
-        xml_blok1 = d.dump_hierarchy()
-    except Exception:
-        pass
-    xml_lower = xml_blok1.lower()
-
-    has_ambil_waktu = (
-        d(text="Ambil Waktu").exists
-        or d(textContains="Ambil Waktu").exists
-        or d(description="Ambil Waktu").exists
-        or d(descriptionContains="Ambil Waktu").exists
-        or ("ambil waktu" in xml_lower)
-    )
-    has_next_b2 = (
-        d(text="BERIKUTNYA BLOK II").exists
-        or d(resourceId="fasih-form-nav-next-button").exists
-        or ("berikutnya blok ii" in xml_lower)
-    )
-    has_kirim = (
-        d(text="Kirim").exists
-        or d(textMatches="(?i)^(kirim|submit)$").exists
-        or bool(re.search(r'>\s*(?:kirim|submit)\s*<', xml_blok1, re.IGNORECASE))
-    )
-
-    if has_ambil_waktu or (has_kirim and not has_next_b2 and not d(text="Cek ID Pelanggan").exists):
+    # Form yang belum disurvei memiliki tombol 'BERIKUTNYA BLOK IV' di bagian bawah form Blok I
+    # dan TIDAK ADA tombol 'BERIKUTNYA BLOK II'.
+    is_belum_survey, alasan_skip = check_kuesioner_belum_tersurvei(d)
+    if is_belum_survey:
         print(f"\n[⚠️ SKIP] IDPEL {idpel} BELUM TERSURVEI!")
-        print("       (Terdeteksi tombol 'Ambil Waktu' di BLOK I - kuesioner belum disurvei)")
+        print(f"       ({alasan_skip} - kuesioner belum disurvei)")
         print("[*] Melewati data ini dan membersihkannya dari antrean cache...")
         append_to_log(OUT_BELUM_SURVEY, {
             "id_pelanggan": idpel,
             "NIK_Perbaikan": nik_baru,
-            "keterangan": "Belum tersurvei (terdeteksi tombol Ambil Waktu di Blok I)",
+            "keterangan": f"Belum tersurvei ({alasan_skip})",
             "waktu": time.strftime("%Y-%m-%d %H:%M:%S")
         })
         remove_id_from_scan_cache(target_ids, device=d)
@@ -274,20 +315,15 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
 
         if not btn_cek_idpel or not btn_cek_idpel.exists:
             # Cek sekali lagi apakah kuesioner belum tersurvei terdeteksi setelah scroll
-            is_uncompleted = (
-                d(textContains="Ambil Waktu").exists
-                or d(descriptionContains="Ambil Waktu").exists
-                or d(text="Kirim").exists
-                or "ambil waktu" in d.dump_hierarchy().lower()
-            )
+            is_uncompleted, alasan_uncompleted = check_kuesioner_belum_tersurvei(d)
             if is_uncompleted:
                 print(f"\n[⚠️ SKIP] IDPEL {idpel} BELUM TERSURVEI!")
-                print("       (Terdeteksi 'Ambil Waktu'/'Kirim' & tombol Cek ID Pelanggan tidak ada)")
+                print(f"       ({alasan_uncompleted} & tombol Cek ID Pelanggan tidak ada)")
                 print("[*] Melewati data ini dan membersihkannya dari antrean cache...")
                 append_to_log(OUT_BELUM_SURVEY, {
                     "id_pelanggan": idpel,
                     "NIK_Perbaikan": nik_baru,
-                    "keterangan": "Belum tersurvei (Cek ID Pelanggan tidak ada, terdeteksi Ambil Waktu/Kirim)",
+                    "keterangan": f"Belum tersurvei ({alasan_uncompleted})",
                     "waktu": time.strftime("%Y-%m-%d %H:%M:%S")
                 })
                 remove_id_from_scan_cache(target_ids, device=d)
@@ -356,13 +392,15 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
             if not btn_next_b2.exists:
                 btn_next_b2 = d(text="BERIKUTNYA BLOK II")
 
-        # Cek sekunder jika setelah scroll ternyata terdeteksi tombol Kirim & Ambil Waktu
-        if not btn_next_b2.exists and (d(text="Ambil Waktu").exists or d(textContains="Ambil Waktu").exists):
-            print(f"\n[⚠️ SKIP] IDPEL {idpel} terdeteksi BELUM TERSURVEI setelah scroll!")
+        # Cek jika setelah scroll ternyata terdeteksi tombol BERIKUTNYA BLOK IV (kuesioner belum tersurvei)
+        is_uncompleted_sec, alasan_sec = check_kuesioner_belum_tersurvei(d)
+        if not btn_next_b2.exists and is_uncompleted_sec:
+            print(f"\n[⚠️ SKIP] IDPEL {idpel} terdeteksi BELUM TERSURVEI!")
+            print(f"       ({alasan_sec})")
             append_to_log(OUT_BELUM_SURVEY, {
                 "id_pelanggan": idpel,
                 "NIK_Perbaikan": nik_baru,
-                "keterangan": "Belum tersurvei (terdeteksi setelah scroll)",
+                "keterangan": f"Belum tersurvei ({alasan_sec})",
                 "waktu": time.strftime("%Y-%m-%d %H:%M:%S")
             })
             remove_id_from_scan_cache(target_ids, device=d)

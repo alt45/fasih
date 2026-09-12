@@ -45,6 +45,7 @@ from .scanner import (
 )
 from .form_processor import (
     process_update_nik,
+    check_kuesioner_belum_tersurvei,
 )
 from .nik_provider import (
     FallbackNIKProvider,
@@ -98,6 +99,7 @@ __all__ = [
     "get_active_cache_file",
     "set_active_cache_file",
     "process_update_nik",
+    "check_kuesioner_belum_tersurvei",
     "FallbackNIKProvider",
     "is_daya_450",
     "pilih_file_json",
