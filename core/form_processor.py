@@ -30,16 +30,21 @@ from .exceptions import (
 def check_kuesioner_belum_tersurvei(d):
     """
     Mendeteksi apakah form yang sedang dibuka di BLOK I adalah kuesioner yang BELUM TERSURVEI.
-    Karakteristik pasti:
-    - Di bagian bawah form BLOK I, terdapat tombol navigasi 'BERIKUTNYA BLOK IV' (resource-id='fasih-form-nav-next-button').
-    - TIDAK ADA tombol navigasi 'BERIKUTNYA BLOK II'.
-    - Tombol 'Ambil Waktu' TIDAK digunakan sebagai kriteria karena kuesioner normal juga dapat memuatnya.
+    Berdasarkan analisis live XML dump (ui_dump/hierarchy_20260912_175818.xml):
+    1. Indikator Utama:
+       - Terdeteksi tombol 'Ambil Waktu' atau teks 'Waktu belum diambil' di Blok I.
+       - Dan TIDAK ADA tombol navigasi 'BERIKUTNYA BLOK II'.
+    2. Indikator Fallback:
+       - Terdeteksi tombol navigasi 'BERIKUTNYA BLOK IV' (fasih-form-nav-next-button) ATAU
+         tombol navigasi 'Kirim' bawah (fasih-form-nav-submit-button) langsung di Blok I.
+       - Dan tetap TIDAK ADA tombol navigasi 'BERIKUTNYA BLOK II'.
     """
     xml_blok1 = ""
     try:
         xml_blok1 = d.dump_hierarchy()
     except Exception:
         pass
+    xml_lower = xml_blok1.lower()
 
     # 1. Cek tombol navigasi fasih-form-nav-next-button
     btn_next = d(resourceId="fasih-form-nav-next-button")
@@ -50,16 +55,7 @@ def check_kuesioner_belum_tersurvei(d):
         except Exception:
             pass
 
-    # Cek keberadaan tombol pindah ke BLOK IV
-    has_next_b4 = (
-        d(resourceId="fasih-form-nav-next-button", text="BERIKUTNYA BLOK IV").exists
-        or d(text="BERIKUTNYA BLOK IV").exists
-        or bool(re.search(r'(?i)blok\s*(iv|4)', btn_text))
-        or d(textMatches=r'(?i).*(berikutnya|pindah).*blok\s*(iv|4).*').exists
-        or bool(re.search(r'(?i)(?:berikutnya|pindah)\s*blok\s*(?:iv|4)', xml_blok1))
-    )
-
-    # Cek keberadaan tombol menuju BLOK II (kuesioner normal/sudah survei)
+    # Cek keberadaan tombol menuju BLOK II (indikasi mutlak kuesioner normal/sudah survei)
     has_next_b2 = (
         d(resourceId="fasih-form-nav-next-button", text="BERIKUTNYA BLOK II").exists
         or d(text="BERIKUTNYA BLOK II").exists
@@ -68,27 +64,99 @@ def check_kuesioner_belum_tersurvei(d):
         or bool(re.search(r'(?i)(?:berikutnya|pindah)\s*blok\s*(?:ii|2)', xml_blok1))
     )
 
-    if has_next_b4 and not has_next_b2:
-        return True, "terdeteksi tombol navigasi 'BERIKUTNYA BLOK IV' di form Blok I"
+    # 2. Indikator Utama: 'Ambil Waktu' atau 'Waktu belum diambil' di Blok I
+    has_ambil_waktu = (
+        d(text="Ambil Waktu").exists
+        or d(textContains="Ambil Waktu").exists
+        or d(text="Waktu belum diambil").exists
+        or d(textContains="Waktu belum diambil").exists
+        or d(description="Ambil Waktu").exists
+        or d(descriptionContains="Ambil Waktu").exists
+        or ("ambil waktu" in xml_lower)
+        or ("waktu belum diambil" in xml_lower)
+    )
 
-    # Jika tombol navigasi belum tampak di viewport (misal layar kecil/belum discroll),
-    # gulir layar sedikit ke bawah untuk memastikan tombol navigasi di bagian bawah form
-    if not has_next_b4 and not has_next_b2:
+    # 3. Indikator Fallback 1: Tombol pindah ke Blok IV ('BERIKUTNYA BLOK IV')
+    has_next_b4 = (
+        d(resourceId="fasih-form-nav-next-button", text="BERIKUTNYA BLOK IV").exists
+        or d(text="BERIKUTNYA BLOK IV").exists
+        or bool(re.search(r'(?i)blok\s*(iv|4)', btn_text))
+        or d(textMatches=r'(?i).*(berikutnya|pindah).*blok\s*(iv|4).*').exists
+        or bool(re.search(r'(?i)(?:berikutnya|pindah)\s*blok\s*(?:iv|4)', xml_blok1))
+    )
+
+    # 4. Indikator Fallback 2: Tombol 'Kirim' navigasi bawah (fasih-form-nav-submit-button) langsung di Blok I
+    btn_submit_nav = d(resourceId="fasih-form-nav-submit-button")
+    has_kirim_nav = (
+        btn_submit_nav.exists
+        or ("fasih-form-nav-submit-button" in xml_blok1)
+    )
+
+    # Evaluasi Layar Awal
+    if not has_next_b2:
+        if has_ambil_waktu:
+            return True, "terdeteksi tombol 'Ambil Waktu' / status 'Waktu belum diambil' di Blok I"
+        if has_next_b4:
+            return True, "terdeteksi tombol navigasi 'BERIKUTNYA BLOK IV' di Blok I (fallback)"
+        if has_kirim_nav:
+            return True, "terdeteksi tombol navigasi 'Kirim' langsung di Blok I (fallback)"
+
+    # Jika pada viewport awal belum tampak elemen di atas, lakukan scroll kecil ke bawah
+    if not has_next_b2 and not has_ambil_waktu and not has_next_b4 and not has_kirim_nav:
         scroll_down_small(d, duration=0.35)
         time.sleep(0.5)
+
+        xml_scroll = ""
+        try:
+            xml_scroll = d.dump_hierarchy()
+        except Exception:
+            pass
+        xml_scroll_lower = xml_scroll.lower()
+
         btn_next = d(resourceId="fasih-form-nav-next-button")
         if btn_next.exists:
             try:
                 btn_text = btn_next.info.get("text", "").strip()
             except Exception:
                 pass
-        if (
+
+        has_next_b2_scroll = (
+            d(resourceId="fasih-form-nav-next-button", text="BERIKUTNYA BLOK II").exists
+            or d(text="BERIKUTNYA BLOK II").exists
+            or bool(re.search(r'(?i)blok\s*(ii|2)', btn_text))
+            or d(textMatches=r'(?i).*(berikutnya|pindah).*blok\s*(ii|2).*').exists
+            or bool(re.search(r'(?i)(?:berikutnya|pindah)\s*blok\s*(?:ii|2)', xml_scroll))
+        )
+
+        has_ambil_waktu_scroll = (
+            d(text="Ambil Waktu").exists
+            or d(textContains="Ambil Waktu").exists
+            or d(text="Waktu belum diambil").exists
+            or d(textContains="Waktu belum diambil").exists
+            or ("ambil waktu" in xml_scroll_lower)
+            or ("waktu belum diambil" in xml_scroll_lower)
+        )
+
+        has_next_b4_scroll = (
             d(resourceId="fasih-form-nav-next-button", text="BERIKUTNYA BLOK IV").exists
             or d(text="BERIKUTNYA BLOK IV").exists
             or bool(re.search(r'(?i)blok\s*(iv|4)', btn_text))
             or d(textMatches=r'(?i).*(berikutnya|pindah).*blok\s*(iv|4).*').exists
-        ):
-            return True, "terdeteksi tombol navigasi 'BERIKUTNYA BLOK IV' di form Blok I setelah scroll"
+            or bool(re.search(r'(?i)(?:berikutnya|pindah)\s*blok\s*(?:iv|4)', xml_scroll))
+        )
+
+        has_kirim_nav_scroll = (
+            d(resourceId="fasih-form-nav-submit-button").exists
+            or ("fasih-form-nav-submit-button" in xml_scroll)
+        )
+
+        if not has_next_b2_scroll:
+            if has_ambil_waktu_scroll:
+                return True, "terdeteksi tombol 'Ambil Waktu' di Blok I setelah scroll"
+            if has_next_b4_scroll:
+                return True, "terdeteksi tombol navigasi 'BERIKUTNYA BLOK IV' di Blok I setelah scroll (fallback)"
+            if has_kirim_nav_scroll:
+                return True, "terdeteksi tombol navigasi 'Kirim' langsung di Blok I setelah scroll (fallback)"
 
     return False, ""
 
@@ -256,6 +324,8 @@ def process_update_nik(d, row_data, csv_input_path=CSV_INPUT, skip_cek_idpel=Fal
             d(text="Cek ID Pelanggan").exists
             or d(text="BERIKUTNYA BLOK II").exists
             or d(text="BERIKUTNYA BLOK IV").exists
+            or d(text="Ambil Waktu").exists
+            or d(textContains="Ambil Waktu").exists
             or d(textContains="ID pelanggan").exists
             or d(textContains="BLOK I").exists
             or d(resourceId="fasih-form-nav-next-button").exists

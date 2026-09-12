@@ -45,7 +45,7 @@ Aplikasi menyediakan struktur menu bertingkat (Submenu) yang rapi dan mudah dike
 - **Proteksi Antrean Cache:** Item ID **TIDAK AKAN DIHAPUS** dari cache jika terjadi gangguan koneksi, timeout server, atau terkena Limit API, sehingga data tetap aman dan dapat diproses kembali setelah koneksi stabil atau setelah berganti akun.
 
 ### 2. Deteksi & Auto-Skip Kuesioner Belum Tersurvei
-- Pada kuesioner yang belum pernah disurvei di lapangan, halaman BLOK I di bagian bawah menampilkan tombol navigasi *"BERIKUTNYA BLOK IV"* (`resource-id="fasih-form-nav-next-button"`), tanpa adanya tombol *"BERIKUTNYA BLOK II"*.
+- Pada kuesioner yang belum pernah disurvei di lapangan, sistem mendeteksi tombol *"Ambil Waktu"* di BLOK I sebagai indikator utama, dengan fallback tombol navigasi *"BERIKUTNYA BLOK IV"* (`resource-id="fasih-form-nav-next-button"`), serta memastikan tidak adanya tombol *"BERIKUTNYA BLOK II"*.
 - Sistem mendeteksi kondisi ini secara otomatis, membatalkan form, mencatat ke `BELUM_TERSURVEI_SKIP.csv`, dan membersihkan item dari antrean cache agar tidak menghambat penugasan lainnya.
 
 ### 3. Logika Cek NIK Cerdas & Retry 2x
