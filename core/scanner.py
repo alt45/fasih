@@ -198,7 +198,7 @@ def scan_all_assignments_from_hp(d, scan_by="auto"):
                                 final_ids = cleaned_ids
 
                         set_active_cache_file(cache_file, initial_data=cache_data)
-                        return final_ids
+                        return list(final_ids)
                     elif pilihan in ['n', 'no']:
                         print("[*] Memilih untuk scan ulang. Memulai pemindaian dari awal...")
                         break
@@ -418,7 +418,7 @@ def scan_all_assignments_from_hp(d, scan_by="auto"):
         "wilayah_id": wilayah_id or "",
         "device_serial": getattr(d, 'serial', 'unknown'),
         "scan_type": detected_type,
-        "data": collected
+        "data": list(collected)
     }
     try:
         with open(cache_file, "w", encoding="utf-8") as f:
@@ -428,7 +428,7 @@ def scan_all_assignments_from_hp(d, scan_by="auto"):
     except Exception as e:
         print(f"[!] Gagal menyimpan cache: {e}")
         
-    return collected
+    return list(collected)
 
 
 CACHE_DIR = "cache"
@@ -522,8 +522,9 @@ def set_active_cache_file(path, initial_data=None):
         return
     ACTIVE_CACHE_FILE = path
     if initial_data and isinstance(initial_data, dict):
-        _ACTIVE_CACHE_DATA = initial_data
-        _ACTIVE_CACHE_SET = set(str(x).strip() for x in initial_data.get("data", []))
+        _ACTIVE_CACHE_DATA = dict(initial_data)
+        _ACTIVE_CACHE_DATA["data"] = list(initial_data.get("data", []))
+        _ACTIVE_CACHE_SET = set(str(x).strip() for x in _ACTIVE_CACHE_DATA["data"])
         if os.path.exists(path):
             _ACTIVE_CACHE_MTIME = os.path.getmtime(path)
         else:
@@ -532,7 +533,8 @@ def set_active_cache_file(path, initial_data=None):
         try:
             with open(path, "r", encoding="utf-8") as f:
                 _ACTIVE_CACHE_DATA = json.load(f)
-            _ACTIVE_CACHE_SET = set(str(x).strip() for x in _ACTIVE_CACHE_DATA.get("data", []))
+            _ACTIVE_CACHE_DATA["data"] = list(_ACTIVE_CACHE_DATA.get("data", []))
+            _ACTIVE_CACHE_SET = set(str(x).strip() for x in _ACTIVE_CACHE_DATA["data"])
             _ACTIVE_CACHE_MTIME = os.path.getmtime(path)
         except Exception:
             _ACTIVE_CACHE_DATA = None
@@ -622,15 +624,17 @@ def remove_id_from_scan_cache(item_ids, device=None, cache_file=None):
         # ID tidak ada di antrean cache berjalan (atau sudah terhapus sebelumnya), 0 disk I/O!
         return False
 
-    # Hapus dari data in-memory
-    data_list = _ACTIVE_CACHE_DATA.get("data", [])
+    # Hapus dari data in-memory secara aman tanpa memutasi referensi luar
+    to_remove_set = set(to_remove)
     for t in to_remove:
         _ACTIVE_CACHE_SET.discard(t)
-        if t in data_list:
-            data_list.remove(t)
-        print(f"[OK] ID '{t}' BERHASIL DIHAPUS dari cache berjalan '{target_file}' (Sisa antrean: {len(data_list)}).")
 
-    _ACTIVE_CACHE_DATA["data"] = data_list
+    old_data = _ACTIVE_CACHE_DATA.get("data", [])
+    new_data = [x for x in old_data if str(x).strip() not in to_remove_set]
+    _ACTIVE_CACHE_DATA["data"] = new_data
+
+    for t in to_remove:
+        print(f"[OK] ID '{t}' BERHASIL DIHAPUS dari cache berjalan '{target_file}' (Sisa antrean: {len(new_data)}).")
 
     # Tulis perubahan hanya ke SATU file cache aktif
     try:

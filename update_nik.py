@@ -446,7 +446,7 @@ def run_direct_random_mode(target_device=None, custom_json=None, is_pasca=True):
     skipped_count = 0
     gagal_count = 0
 
-    for idx, item_id in enumerate(scanned_items, start=1):
+    for idx, item_id in enumerate(list(scanned_items), start=1):
         # Ambil 1 NIK acak untuk input pertama
         first_nik = fallback_provider.get_random()
         item = {
